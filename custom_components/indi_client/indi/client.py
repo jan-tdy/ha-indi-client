@@ -6,19 +6,28 @@ exclusive ownership of any device: it reads whatever properties the
 server broadcasts (which already reflects changes made by other clients)
 and can send its own ``new*Vector`` commands to change them.
 
-BLOB (image) properties are intentionally not requested (no
-``enableBLOB`` is ever sent), so large binary payloads never reach this
-client - see the README for details.
+BLOB (image) data is opt-in per the INDI spec: a driver only starts
+sending it once a client asks via ``enableBLOB`` (see ``enable_blob``
+below). Until then, no large binary payloads reach this client.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import logging
 from collections.abc import Callable
 from xml.etree import ElementTree as ET
 
 from .model import INDIElement, INDIProperty
-from .protocol import build_get_properties, build_new_vector, format_number, parse_number, split_first_element
+from .protocol import (
+    build_enable_blob,
+    build_get_properties,
+    build_new_vector,
+    format_number,
+    parse_number,
+    split_first_element,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,6 +133,14 @@ class INDIClient:
         """Send a ``newSwitchVector`` for one or more elements (values: 'On'/'Off')."""
         await self._send(build_new_vector("Switch", device, name, values))
 
+    async def enable_blob(self, device: str, name: str | None = None, mode: str = "Also") -> None:
+        """Ask the driver to start sending BLOB (image) data for a property.
+
+        Must be called (once per device/vector) before any image data for
+        it will actually arrive - see the module docstring.
+        """
+        await self._send(build_enable_blob(device, name, mode))
+
     async def _send(self, data: bytes) -> None:
         if self._writer is None:
             raise INDIConnectionError("Not connected to indiserver")
@@ -220,6 +237,19 @@ class INDIClient:
                     element_obj.min = _safe_float(child.get("min"))
                     element_obj.max = _safe_float(child.get("max"))
                     element_obj.step = _safe_float(child.get("step"))
+            elif ptype == "BLOB":
+                # defBLOB declares the property but rarely carries data;
+                # the actual image arrives later via setBLOBVector, and
+                # only once enable_blob() has been called for it.
+                if child.get("format"):
+                    element_obj.format = child.get("format")
+                if value_text:
+                    try:
+                        element_obj.value = base64.b64decode(value_text)
+                    except (binascii.Error, ValueError) as err:
+                        _LOGGER.debug(
+                            "Could not base64-decode BLOB %s.%s: %s", name, element_name, err
+                        )
             else:
                 element_obj.value = value_text
 

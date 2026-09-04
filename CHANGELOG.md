@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0b2 - 2026-09-04
+
+- Camera previews: a `camera` entity is now created for every INDI BLOB property (e.g. a CCD's
+  `CCD1`). It automatically requests image data (`enableBLOB ... Also`) and decodes/stretches
+  standard FITS frames into a JPEG preview (`numpy` + `Pillow`, now declared as requirements).
+  Raw JPEG BLOBs are passed through unchanged. See the README for what this preview does and
+  doesn't do (no debayering, no calibration - it's a quick look, not processed data).
+
 ## 1.0.0b1 - 2026-09-04
 
 - Brand assets added (`custom_components/indi_client/brand/`) so the `hacs` CI validation passes.

@@ -93,6 +93,21 @@ def build_get_properties(device: str | None = None, name: str | None = None) -> 
     return f"<getProperties{attrs}/>".encode()
 
 
+def build_enable_blob(device: str, name: str | None = None, mode: str = "Also") -> bytes:
+    """Build an ``<enableBLOB/>`` request.
+
+    BLOB (image) data is opt-in per the INDI spec: a driver only sends it
+    to clients that asked for it. ``mode`` is one of ``"Never"``,
+    ``"Also"`` (BLOBs plus normal property updates) or ``"Only"``.
+    ``name`` scopes the request to a single BLOB vector; omitted, it
+    applies to every BLOB property of ``device``.
+    """
+    attrs = f" device={quoteattr(device)}"
+    if name:
+        attrs += f" name={quoteattr(name)}"
+    return f"<enableBLOB{attrs}>{escape(mode)}</enableBLOB>".encode()
+
+
 def build_new_vector(ptype: str, device: str, name: str, values: dict[str, str]) -> bytes:
     """Build a ``new<Type>Vector`` command setting one or more elements."""
     child_tag = _NEW_VECTOR_CHILD_TAG[ptype]

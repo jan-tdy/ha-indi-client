@@ -32,6 +32,7 @@ client, so you can, for example:
 
 - Park/unpark the mount from an HA automation (e.g. on rain or high wind).
 - Read and set a CCD's target temperature, and watch the current sensor temperature.
+- See the CCD's latest captured frame as a camera preview, right in a Lovable dashboard.
 - See device connection state and recent driver log messages inside HA.
 - Trigger dome/roof or power-switch style properties from dashboards and automations.
 
@@ -40,10 +41,11 @@ client, so you can, for example:
 INDI is a push-based, XML-over-TCP protocol: the client sends `getProperties`, the server answers
 with `def*Vector` elements describing each device's properties, and later pushes `set*Vector`
 elements whenever a value changes (caused by *any* connected client, or by the driver itself). This
-integration implements that protocol directly in Python (`custom_components/indi_client/indi/`,
-stdlib-only, no `pyindi-client`/SWIG dependency), keeps a live model of every device/property, and
-maps them onto Home Assistant entities automatically - there is no hardcoded list of "supported"
-devices or drivers.
+integration implements that protocol directly in Python (`custom_components/indi_client/indi/`, no
+`pyindi-client`/SWIG dependency - the protocol core itself is pure stdlib, only camera-frame
+decoding needs `numpy`/`Pillow`), keeps a live model of every device/property, and maps them onto
+Home Assistant entities automatically - there is no hardcoded list of "supported" devices or
+drivers.
 
 ### Entity mapping
 
@@ -59,6 +61,7 @@ devices or drivers.
 | Switch | writable | `AnyOfMany` | `switch` per element |
 | Switch | read-only | `AnyOfMany` | `binary_sensor` per element |
 | `CONNECTION` (standard property) | writable | - | `switch` named **Connected** (special-cased for a nicer toggle instead of a Connect/Disconnect dropdown) |
+| BLOB (captured frame) | any | - | `camera` (see below) |
 | device/server log messages | - | - | `sensor` **Last message** per device, with recent history in `history` attribute |
 | server TCP link | - | - | diagnostic `binary_sensor` **Server connected** |
 
@@ -77,6 +80,18 @@ So, concretely:
 - **Connectivity** - the `switch.<device>_connected` entity reflects and controls the driver's
   `CONNECTION` property, and `binary_sensor.server_connected` reflects the TCP link to `indiserver`
   itself.
+
+### Camera previews
+
+BLOB (image) data is opt-in per the INDI protocol - a driver only sends it once a client asks. As
+soon as a `camera` entity for a device's BLOB property (e.g. `CCD1`) is set up, this integration
+sends that request (`enableBLOB ... Also`) automatically, so the camera starts showing the latest
+captured frame with no extra configuration.
+
+Frames are decoded with a small built-in FITS reader (the format virtually every INDI camera driver
+uses), stretched with a percentile clip for a reasonable preview, and JPEG-encoded (needs `numpy`
+and `Pillow`, both pulled in automatically). See **Known limitations** below for what this preview
+pipeline does *not* do (debayering, precise processing).
 
 ### Escape hatch: raw property access
 
@@ -182,9 +197,11 @@ automation:
 
 ## Known limitations
 
-- **No BLOB/image support yet.** This client never sends `enableBLOB`, so image/preview data is
-  not fetched (and never reaches this client, avoiding the overhead of parsing large base64
-  payloads). Planned for a future release.
+- **Camera previews are a quick look, not calibrated/processed data.** Frames are decoded and
+  displayed with a simple percentile-clip stretch - there's no debayering (a one-shot-color camera's
+  raw Bayer frame shows as a grayscale mosaic pattern), no dark/flat calibration, no plate solving.
+  Use CCDciel/KStars for actual image processing; this is just a "is it working / roughly in focus"
+  preview inside HA. Non-FITS, non-JPEG BLOB formats (e.g. `.xisf`) aren't decoded.
 - **Multi-element number vectors** (e.g. `EQUATORIAL_EOD_COORD` with RA + DEC for a GOTO) are
   exposed as independent `number` entities. Setting one sends only that element; most drivers keep
   the other element's last known value, but this is driver-dependent. For coordinated multi-element

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from indi.protocol import (
+    build_enable_blob,
     build_get_properties,
     build_new_vector,
     format_number,
@@ -91,6 +92,16 @@ def test_build_new_vector_switch():
 
 def test_build_get_properties_default():
     assert build_get_properties() == b'<getProperties version="1.7"/>'
+
+
+def test_build_enable_blob_device_only():
+    xml = build_enable_blob("CCD Simulator")
+    assert xml == b'<enableBLOB device="CCD Simulator">Also</enableBLOB>'
+
+
+def test_build_enable_blob_scoped_to_property():
+    xml = build_enable_blob("CCD Simulator", "CCD1", mode="Only")
+    assert xml == b'<enableBLOB device="CCD Simulator" name="CCD1">Only</enableBLOB>'
 
 
 def test_build_get_properties_scoped_to_device():
