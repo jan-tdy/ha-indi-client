@@ -70,7 +70,7 @@
         },
         "values": {
           "name": "Hodnoty",
-          "description": "Mapa názov elementu -> hodnota, napr. {\"PARK\": \"On\"}."
+          "description": "Mapa názov elementu -> hodnota, napríklad: PARK nastavené na On."
         }
       }
     }

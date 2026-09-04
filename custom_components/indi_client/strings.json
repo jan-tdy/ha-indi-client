@@ -70,7 +70,7 @@
         },
         "values": {
           "name": "Values",
-          "description": "Mapping of element name to value, e.g. {\"PARK\": \"On\"}."
+          "description": "Mapping of element name to value, for example: PARK set to On."
         }
       }
     }
