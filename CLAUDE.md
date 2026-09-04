@@ -30,7 +30,9 @@ if a `vX.Y.Z` tag/release for that version doesn't exist yet, the
 workflow creates the tag and the GitHub Release itself (auto-generated
 notes). **No manual `git tag`/`git push` step is needed or wanted.**
 
-So whenever a change should ship as a new version:
+This is **CI-enforced**: `.github/workflows/require-version-bump.yml` fails
+any PR into `main` whose `manifest.json` `version` is unchanged from
+`main`. So every PR, however small, must:
 
 1. Bump `version` in `custom_components/indi_client/manifest.json`
    (follow the existing beta/semver scheme, e.g. `1.0.0b0` -> `1.0.0b1`
@@ -40,12 +42,7 @@ So whenever a change should ship as a new version:
    maintained).
 3. Get that change merged to `main` (PR + merge, per the repo's normal
    flow). The release workflow takes it from there - do not manually
-   create or push tags, and do not skip the version bump expecting
-   someone else to cut the release later.
-
-If a change genuinely doesn't warrant a new version (e.g. a CI-only
-tweak, a typo fix in a comment), it's fine to merge without bumping the
-version - just don't leave a user-facing change unreleased.
+   create or push tags.
 
 ## Development
 

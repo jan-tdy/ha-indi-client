@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0b1 - 2026-09-04
+
+- Brand assets added (`custom_components/indi_client/brand/`) so the `hacs` CI validation passes.
+- Releases are now fully automatic: pushing to `main` with a bumped `manifest.json` version creates the `vX.Y.Z` tag and GitHub Release by itself - no manual tagging.
+- CI now requires every PR to bump `manifest.json`'s `version` compared to `main`, so a merge always ships a release.
+- Added `CLAUDE.md` (contributor/agent guidance) and a README disclaimer: unaffiliated with the INDI Library project; noted as originating from the author's DevControl2 system.
+
 ## 1.0.0b0 - 2026-09-04
 
 Initial beta release.
