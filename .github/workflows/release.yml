@@ -1,7 +1,16 @@
 name: Release
 
+# Fully automatic: every push to main is checked against
+# custom_components/indi_client/manifest.json's "version". If that
+# version has no release yet, this creates the vX.Y.Z tag and the
+# GitHub Release for it - no manual `git tag && git push` step needed.
+# A direct push of a "vX.Y.Z" tag is still supported for one-off/manual
+# releases, and is cross-checked against the manifest the same way.
+
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"
 
@@ -12,6 +21,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Read version from manifest.json
         id: manifest
@@ -19,18 +30,43 @@ jobs:
           version=$(python3 -c "import json;print(json.load(open('custom_components/indi_client/manifest.json'))['version'])")
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Verify tag matches manifest.json version
+      - name: Determine release tag
+        id: tag
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          manifest_version="${{ steps.manifest.outputs.version }}"
-          if [ "$tag" != "$manifest_version" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match manifest.json version ${manifest_version}"
-            exit 1
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            tag="${{ github.ref_name }}"
+            manifest_version="${{ steps.manifest.outputs.version }}"
+            if [ "${tag#v}" != "$manifest_version" ]; then
+              echo "::error::Tag $tag does not match manifest.json version $manifest_version"
+              exit 1
+            fi
+          else
+            tag="v${{ steps.manifest.outputs.version }}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this version was already released
+        id: exists
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.tag.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Create and push tag
+        if: github.ref_type != 'tag' && steps.exists.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.tag.outputs.tag }}"
+          git push origin "${{ steps.tag.outputs.tag }}"
+
       - name: Create GitHub Release
+        if: steps.exists.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, 'b') || contains(github.ref_name, 'a') || contains(github.ref_name, 'rc') }}
+          prerelease: ${{ contains(steps.tag.outputs.tag, 'b') || contains(steps.tag.outputs.tag, 'a') || contains(steps.tag.outputs.tag, 'rc') }}

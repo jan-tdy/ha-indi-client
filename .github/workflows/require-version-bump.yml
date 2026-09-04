@@ -1,0 +1,32 @@
+name: Require version bump
+
+# Every PR into main must bump custom_components/indi_client/manifest.json's
+# "version", so that merging always produces a new release (see
+# release.yml and CLAUDE.md).
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin "${{ github.base_ref }}"
+
+      - name: Require a manifest.json version bump
+        run: |
+          base_version=$(git show "origin/${{ github.base_ref }}:custom_components/indi_client/manifest.json" | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])")
+          head_version=$(python3 -c "import json; print(json.load(open('custom_components/indi_client/manifest.json'))['version'])")
+          echo "base version: $base_version"
+          echo "head version: $head_version"
+          if [ "$base_version" = "$head_version" ]; then
+            echo "::error file=custom_components/indi_client/manifest.json::version was not bumped (still $head_version). Every PR must bump it so the release workflow can cut a new release on merge - see CLAUDE.md."
+            exit 1
+          fi
