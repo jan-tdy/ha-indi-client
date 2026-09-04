@@ -8,10 +8,19 @@
 
   <rect x="0" y="0" width="512" height="512" rx="118" ry="118" fill="url(#bg)"/>
 
-  <text x="256" y="296" text-anchor="middle"
+  <!-- generic ringed-planet glyph (no specific mission/brand artwork) -->
+  <g transform="translate(256,196)">
+    <!-- ring, drawn behind the planet -->
+    <ellipse cx="0" cy="0" rx="128" ry="40" fill="none" stroke="#FFFFFF"
+             stroke-width="15" opacity="0.85" transform="rotate(-18)"/>
+    <!-- planet -->
+    <circle cx="0" cy="0" r="72" fill="#FFFFFF"/>
+    <!-- short front arc of the ring, drawn on top for a bit of depth -->
+    <path d="M -74 34 A 128 40 0 0 0 74 -6" fill="none" stroke="#FFFFFF"
+          stroke-width="15" stroke-linecap="round" opacity="0.85" transform="rotate(-18)"/>
+  </g>
+
+  <text x="256" y="392" text-anchor="middle"
         font-family="Liberation Sans, Arial, sans-serif" font-weight="700"
-        font-size="150" fill="#FFFFFF">INDI</text>
-  <text x="256" y="356" text-anchor="middle"
-        font-family="Liberation Sans, Arial, sans-serif" font-weight="700"
-        font-size="46" letter-spacing="14" fill="#FFFFFF" opacity="0.88">CLIENT</text>
+        font-size="54" letter-spacing="16" fill="#FFFFFF">CLIENT</text>
 </svg>
