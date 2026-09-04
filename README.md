@@ -18,10 +18,10 @@ and, when a property allows it, can send its own commands to change it - bidirec
 
 > **Disclaimer:** this is an independent, unofficial client. It is **not affiliated with,
 > endorsed by, or sponsored by** the [INDI Library](https://indilib.org) project. "INDI" is used
-> here only to describe protocol compatibility with `indiserver`. It originated as one component
-> of the author's private **DevControl2** system (built for the Bombol.Space telescope hosting
-> facility), but this integration itself is generic - it makes no assumption about any specific
-> installation and works with any standard-compliant INDI driver/device.
+> here only to describe protocol compatibility with `indiserver`.
+
+> This integration is used in the author's private **DevControl2** system (built for the Bombol.Space telescope hosting
+> facility), but this integration itself is generic - it makes no assumption about any specific installation and works with any standard-compliant INDI driver/device.
 
 ## Why
 
