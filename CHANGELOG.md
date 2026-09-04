@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0b2 - 2026-09-04
+## 1.1.0 - 2026-09-04
 
 - Camera previews: a `camera` entity is now created for every INDI BLOB property (e.g. a CCD's
   `CCD1`). It automatically requests image data (`enableBLOB ... Also`) and decodes/stretches

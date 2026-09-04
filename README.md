@@ -12,9 +12,9 @@ client**, exactly the way [CCDciel](https://www.ap-i.net/ccdciel/en/start), KSta
 reads whatever properties the server broadcasts (already reflecting changes made by other clients)
 and, when a property allows it, can send its own commands to change it - bidirectionally.
 
-> **Status:** early beta (`v1.0.0b0`). The protocol core and entity mapping are functional and
-> unit tested, but this has not yet been run against every INDI driver in the wild. Feedback and
-> bug reports are very welcome.
+> **Status:** beta (`v1.1.0`). The protocol core and entity mapping are functional and unit
+> tested, but this has not yet been run against every INDI driver in the wild. Feedback and bug
+> reports are very welcome.
 
 > **Disclaimer:** this is an independent, unofficial client. It is **not affiliated with,
 > endorsed by, or sponsored by** the [INDI Library](https://indilib.org) project. "INDI" is used
@@ -224,15 +224,13 @@ pytest
 
 ### Releasing
 
-HACS tracks GitHub Releases, not `CHANGELOG.md` directly. To cut a release:
-
-1. Bump `version` in `custom_components/indi_client/manifest.json` (and add an entry to
-   `CHANGELOG.md`).
-2. Tag the commit `vX.Y.Z` (matching the manifest version) and push the tag, e.g.
-   `git tag v1.0.0b0 && git push origin v1.0.0b0`.
-3. [`.github/workflows/release.yml`](.github/workflows/release.yml) then verifies the tag matches
-   `manifest.json` and publishes a GitHub Release with auto-generated notes - that release is what
-   HACS shows to users when an update is available.
+HACS tracks GitHub Releases, not `CHANGELOG.md` directly - and releasing is fully automatic. Every
+PR into `main` must bump `version` in `custom_components/indi_client/manifest.json` (CI-enforced by
+[`.github/workflows/require-version-bump.yml`](.github/workflows/require-version-bump.yml); add a
+`CHANGELOG.md` entry alongside it). Once merged,
+[`.github/workflows/release.yml`](.github/workflows/release.yml) tags that version and publishes a
+GitHub Release with auto-generated notes by itself - no manual `git tag`/`git push` needed. See
+[`CLAUDE.md`](CLAUDE.md) for the full flow.
 
 ## License
 
