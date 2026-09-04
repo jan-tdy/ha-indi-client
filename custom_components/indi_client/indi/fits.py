@@ -77,8 +77,8 @@ def decode_grayscale(data: bytes) -> np.ndarray:
 
     header, data_start = _parse_header(data)
     naxis = int(header.get("NAXIS", 0))
-    if naxis < 2:
-        raise FITSError(f"unsupported NAXIS={naxis} (need a 2-D image)")
+    if naxis != 2:
+        raise FITSError(f"unsupported NAXIS={naxis} (only 2-D images are supported)")
 
     bitpix = int(header.get("BITPIX", 0))
     dtype = _BITPIX_DTYPE.get(bitpix)

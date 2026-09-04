@@ -16,6 +16,7 @@ import asyncio
 import base64
 import binascii
 import logging
+import re
 from collections.abc import Callable
 from xml.etree import ElementTree as ET
 
@@ -32,6 +33,7 @@ from .protocol import (
 _LOGGER = logging.getLogger(__name__)
 
 MAX_MESSAGES = 25
+_WHITESPACE_RE = re.compile(r"\s+")
 
 _VECTOR_TAGS = {
     "defTextVector": "Text",
@@ -78,7 +80,14 @@ class INDIClient:
         self._read_task: asyncio.Task | None = None
 
     async def connect(self) -> None:
-        """Open the TCP connection and start listening for updates."""
+        """Open the TCP connection to indiserver.
+
+        This does *not* yet start reading data or request properties -
+        call :meth:`start` for that once every consumer of this client's
+        callbacks (e.g. every Home Assistant entity platform) has
+        subscribed, so no def*Vector/message is missed by a callback
+        that isn't wired up yet.
+        """
         try:
             self._reader, self._writer = await asyncio.wait_for(
                 asyncio.open_connection(self.host, self.port), timeout=self._connect_timeout
@@ -87,10 +96,13 @@ class INDIClient:
             raise INDIConnectionError(str(err)) from err
 
         self.connected = True
-        self._read_task = asyncio.ensure_future(self._read_loop())
-        await self._send(build_get_properties())
         if self.on_connection_changed:
             self.on_connection_changed(True)
+
+    async def start(self) -> None:
+        """Start the read loop and request property definitions."""
+        self._read_task = asyncio.ensure_future(self._read_loop())
+        await self._send(build_get_properties())
 
     async def disconnect(self) -> None:
         """Close the connection and stop the read loop."""
@@ -217,6 +229,7 @@ class INDIClient:
             if elem.get("label"):
                 prop.label = elem.get("label")
 
+        had_invalid_blob = False
         for child in elem:
             if not child.tag.startswith(("def", "one")):
                 continue
@@ -244,12 +257,19 @@ class INDIClient:
                 if child.get("format"):
                     element_obj.format = child.get("format")
                 if value_text:
+                    # Line-wrapped base64 (embedded newlines every ~72
+                    # chars) is normal wire formatting, not corruption -
+                    # strip all whitespace first, then validate strictly
+                    # so genuinely malformed data raises instead of
+                    # silently decoding into a corrupt image.
+                    cleaned = _WHITESPACE_RE.sub("", value_text)
                     try:
-                        element_obj.value = base64.b64decode(value_text)
+                        element_obj.value = base64.b64decode(cleaned, validate=True)
                     except (binascii.Error, ValueError) as err:
                         _LOGGER.debug(
                             "Could not base64-decode BLOB %s.%s: %s", name, element_name, err
                         )
+                        had_invalid_blob = True
             else:
                 element_obj.value = value_text
 
@@ -257,6 +277,12 @@ class INDIClient:
                 element_obj.label = child.get("label")
 
             prop.elements[element_name] = element_obj
+
+        if had_invalid_blob:
+            # Don't tell subscribers (e.g. a camera entity) this property
+            # "updated" when the only thing that changed was unusable -
+            # they'd keep showing the last good frame instead.
+            return
 
         callback = self.on_property_defined if is_def else self.on_property_updated
         if callback:

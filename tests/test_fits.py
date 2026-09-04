@@ -51,6 +51,23 @@ def test_decode_grayscale_applies_bscale_bzero():
     assert np.all(array == 10 * 2 + 32768)
 
 
+def test_decode_grayscale_rejects_naxis_three():
+    # A 3-D cube (e.g. multiple planes/frames) must be rejected rather than
+    # silently decoded as a single 2-D plane.
+    cards = [
+        _card("SIMPLE", True),
+        _card("BITPIX", 16),
+        _card("NAXIS", 3),
+        _card("NAXIS1", 4),
+        _card("NAXIS2", 4),
+        _card("NAXIS3", 3),
+    ]
+    header = b"".join(cards) + b"END".ljust(80)
+    header += b" " * ((-len(header)) % 2880)
+    with pytest.raises(FITSError):
+        decode_grayscale(header)
+
+
 def test_decode_grayscale_rejects_non_fits():
     with pytest.raises(FITSError):
         decode_grayscale(b"not a fits file" + b" " * 100)
