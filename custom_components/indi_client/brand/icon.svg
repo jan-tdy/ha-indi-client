@@ -8,16 +8,10 @@
 
   <rect x="0" y="0" width="512" height="512" rx="118" ry="118" fill="url(#bg)"/>
 
-  <!-- hub / client network glyph: central node linked to three peer nodes,
-       standing for "another client talking to the same indiserver hub" -->
-  <g stroke="#FFFFFF" stroke-width="15" stroke-linecap="round" opacity="0.92">
-    <line x1="256" y1="256" x2="256" y2="130"/>
-    <line x1="256" y1="256" x2="360" y2="322"/>
-    <line x1="256" y1="256" x2="152" y2="322"/>
-  </g>
-
-  <circle cx="256" cy="256" r="42" fill="#FFFFFF"/>
-  <circle cx="256" cy="130" r="27" fill="#FFFFFF" opacity="0.95"/>
-  <circle cx="360" cy="322" r="27" fill="#FFFFFF" opacity="0.95"/>
-  <circle cx="152" cy="322" r="27" fill="#FFFFFF" opacity="0.95"/>
+  <text x="256" y="296" text-anchor="middle"
+        font-family="Liberation Sans, Arial, sans-serif" font-weight="700"
+        font-size="150" fill="#FFFFFF">INDI</text>
+  <text x="256" y="356" text-anchor="middle"
+        font-family="Liberation Sans, Arial, sans-serif" font-weight="700"
+        font-size="46" letter-spacing="14" fill="#FFFFFF" opacity="0.88">CLIENT</text>
 </svg>
