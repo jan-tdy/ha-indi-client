@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0 - 2026-09-04
+
+Follow-up fixes to 1.1.0's camera support, from CodeRabbit review on #3:
+
+- **Fixed a startup race** that could silently drop entities for any property (not just BLOB/camera) defined by a driver in the brief window between the client connecting and a platform finishing its setup. `INDIClient.connect()` now only opens the socket; a new `start()` begins reading and requests properties, called only after every platform has subscribed.
+- **Stricter BLOB decoding**: line-wrapped base64 (indiserver's normal formatting) still decodes fine, but genuinely malformed data is now rejected instead of silently producing a corrupt image - and no longer fires a false "property updated" notification when that happens, so a camera keeps showing its last good frame instead.
+- **FITS decoding now rejects `NAXIS` other than 2** (e.g. multi-plane cubes) instead of silently reading only the first plane.
+
 ## 1.1.0 - 2026-09-04
 
 - Camera previews: a `camera` entity is now created for every INDI BLOB property (e.g. a CCD's

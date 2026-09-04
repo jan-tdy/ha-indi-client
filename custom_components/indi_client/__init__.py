@@ -112,7 +112,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await _async_register_services(hass)
 
+    # Platforms must subscribe to the client's dispatcher signals before any
+    # data starts flowing, or a property def*Vector arriving in the window
+    # between connecting and a platform's async_setup_entry could be missed
+    # (client.devices would still have it, but no entity would ever be
+    # created for it). So forward to platforms first, then start the client.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await client.start()
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
