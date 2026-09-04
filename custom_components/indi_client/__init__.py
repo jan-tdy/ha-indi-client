@@ -47,6 +47,7 @@ PLATFORMS: list[Platform] = [
     Platform.SELECT,
     Platform.SWITCH,
     Platform.BINARY_SENSOR,
+    Platform.CAMERA,
 ]
 
 SERVICE_REFRESH_SCHEMA = vol.Schema(

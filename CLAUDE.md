@@ -34,9 +34,12 @@ This is **CI-enforced**: `.github/workflows/require-version-bump.yml` fails
 any PR into `main` whose `manifest.json` `version` is unchanged from
 `main`. So every PR, however small, must:
 
-1. Bump `version` in `custom_components/indi_client/manifest.json`
-   (follow the existing beta/semver scheme, e.g. `1.0.0b0` -> `1.0.0b1`
-   -> ... -> `1.0.0`).
+1. Bump `version` in `custom_components/indi_client/manifest.json`, following
+   semver: a real user-facing feature (a new platform/entity type, a new
+   capability) bumps minor (`1.1.0` -> `1.2.0`); a fix or small tweak
+   bumps patch (`1.1.0` -> `1.1.1`). The `1.0.0b0`/`b1`/`b2` prereleases
+   were the initial bring-up; `1.1.0` (camera support) moved to plain
+   semver and there's no reason to go back to beta suffixes.
 2. Add a short entry to `CHANGELOG.md` describing the change (kept as
    human-readable history in the repo; not what HACS shows, but still
    maintained).
