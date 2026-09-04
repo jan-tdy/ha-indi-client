@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="512" height="512" rx="118" ry="118" fill="url(#bg)"/>
+
+  <!-- generic ringed-planet glyph (no specific mission/brand artwork) -->
+  <g transform="translate(256,196)">
+    <!-- ring, drawn behind the planet -->
+    <ellipse cx="0" cy="0" rx="128" ry="40" fill="none" stroke="#FFFFFF"
+             stroke-width="15" opacity="0.85" transform="rotate(-18)"/>
+    <!-- planet -->
+    <circle cx="0" cy="0" r="72" fill="#FFFFFF"/>
+    <!-- short front arc of the ring, drawn on top for a bit of depth -->
+    <path d="M -74 34 A 128 40 0 0 0 74 -6" fill="none" stroke="#FFFFFF"
+          stroke-width="15" stroke-linecap="round" opacity="0.85" transform="rotate(-18)"/>
+  </g>
+
+  <text x="256" y="392" text-anchor="middle"
+        font-family="Liberation Sans, Arial, sans-serif" font-weight="700"
+        font-size="54" letter-spacing="16" fill="#FFFFFF">CLIENT</text>
+</svg>

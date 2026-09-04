@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from manifest.json
+        id: manifest
+        run: |
+          version=$(python3 -c "import json;print(json.load(open('custom_components/indi_client/manifest.json'))['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches manifest.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest_version="${{ steps.manifest.outputs.version }}"
+          if [ "$tag" != "$manifest_version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match manifest.json version ${manifest_version}"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, 'b') || contains(github.ref_name, 'a') || contains(github.ref_name, 'rc') }}
