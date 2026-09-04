@@ -1,0 +1,42 @@
+refresh:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: indi_client
+    device:
+      required: false
+      selector:
+        text:
+
+set_property:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: indi_client
+    device:
+      required: true
+      example: "Telescope Simulator"
+      selector:
+        text:
+    property:
+      required: true
+      example: "TELESCOPE_PARK"
+      selector:
+        text:
+    type:
+      required: true
+      selector:
+        select:
+          options:
+            - "Text"
+            - "Number"
+            - "Switch"
+    values:
+      required: true
+      example: '{"PARK": "On"}'
+      selector:
+        object:

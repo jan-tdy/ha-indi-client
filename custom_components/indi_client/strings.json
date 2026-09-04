@@ -1,0 +1,78 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to indiserver",
+        "description": "Enter the connection details of your running indiserver instance. This integration connects as an additional client, the same way CCDciel or KStars/EKOS would, so it can run alongside them without interfering.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to indiserver. Check the host, port, and that indiserver is running and reachable.",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This indiserver instance is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Update indiserver connection",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to indiserver. Check the host, port, and that indiserver is running and reachable.",
+      "unknown": "Unexpected error"
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Refresh properties",
+      "description": "Re-request property definitions from the INDI server, optionally limited to one device.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Server",
+          "description": "The INDI Client config entry."
+        },
+        "device": {
+          "name": "Device",
+          "description": "Optional INDI device name to limit the refresh to."
+        }
+      }
+    },
+    "set_property": {
+      "name": "Set property",
+      "description": "Send a raw newTextVector/newNumberVector/newSwitchVector to an INDI device. Use this for properties that are not exposed as entities yet.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Server",
+          "description": "The INDI Client config entry."
+        },
+        "device": {
+          "name": "Device",
+          "description": "INDI device name, e.g. \"Telescope Simulator\"."
+        },
+        "property": {
+          "name": "Property",
+          "description": "Vector property name, e.g. \"TELESCOPE_PARK\"."
+        },
+        "type": {
+          "name": "Type",
+          "description": "Vector type: Text, Number or Switch."
+        },
+        "values": {
+          "name": "Values",
+          "description": "Mapping of element name to value, e.g. {\"PARK\": \"On\"}."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pripojenie na indiserver",
+        "description": "Zadajte údaje bežiaceho indiserver-a. Táto integrácia sa pripája ako ďalší klient, rovnako ako CCDciel alebo KStars/EKOS, takže môže bežať súčasne s nimi bez toho, aby im prekážala.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Pripojenie na indiserver zlyhalo. Skontrolujte host, port a či indiserver beží a je dostupný.",
+      "unknown": "Neočakávaná chyba"
+    },
+    "abort": {
+      "already_configured": "Táto inštancia indiserver-a je už nakonfigurovaná."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Zmena pripojenia na indiserver",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Pripojenie na indiserver zlyhalo. Skontrolujte host, port a či indiserver beží a je dostupný.",
+      "unknown": "Neočakávaná chyba"
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Obnoviť properties",
+      "description": "Znovu vyžiada definície properties z INDI servera, voliteľne len pre jedno zariadenie.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Server",
+          "description": "Konfiguračný záznam INDI Client."
+        },
+        "device": {
+          "name": "Zariadenie",
+          "description": "Voliteľný názov INDI zariadenia, na ktoré sa obnova obmedzí."
+        }
+      }
+    },
+    "set_property": {
+      "name": "Nastaviť property",
+      "description": "Odošle priamy newTextVector/newNumberVector/newSwitchVector na INDI zariadenie. Použite pre properties, ktoré zatiaľ nemajú vlastnú entitu.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Server",
+          "description": "Konfiguračný záznam INDI Client."
+        },
+        "device": {
+          "name": "Zariadenie",
+          "description": "Názov INDI zariadenia, napr. \"Telescope Simulator\"."
+        },
+        "property": {
+          "name": "Property",
+          "description": "Názov vector property, napr. \"TELESCOPE_PARK\"."
+        },
+        "type": {
+          "name": "Typ",
+          "description": "Typ vectora: Text, Number alebo Switch."
+        },
+        "values": {
+          "name": "Hodnoty",
+          "description": "Mapa názov elementu -> hodnota, napr. {\"PARK\": \"On\"}."
+        }
+      }
+    }
+  }
+}
