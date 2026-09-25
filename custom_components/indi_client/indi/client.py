@@ -60,6 +60,9 @@ class INDIConnectionError(INDIClientError):
 class INDIClient:
     """Minimal, event-driven INDI client."""
 
+    _RECONNECT_INITIAL_DELAY = 5.0
+    _RECONNECT_MAX_DELAY = 60.0
+
     def __init__(self, host: str, port: int, *, connect_timeout: float = 5.0) -> None:
         self.host = host
         self.port = port
@@ -88,16 +91,18 @@ class INDIClient:
         subscribed, so no def*Vector/message is missed by a callback
         that isn't wired up yet.
         """
+        await self._open_connection()
+        self.connected = True
+        if self.on_connection_changed:
+            self.on_connection_changed(True)
+
+    async def _open_connection(self) -> None:
         try:
             self._reader, self._writer = await asyncio.wait_for(
                 asyncio.open_connection(self.host, self.port), timeout=self._connect_timeout
             )
         except (OSError, asyncio.TimeoutError) as err:
             raise INDIConnectionError(str(err)) from err
-
-        self.connected = True
-        if self.on_connection_changed:
-            self.on_connection_changed(True)
 
     async def start(self) -> None:
         """Start the read loop and request property definitions."""
@@ -160,27 +165,71 @@ class INDIClient:
         await self._writer.drain()
 
     async def _read_loop(self) -> None:
+        """Read INDI elements until the connection is lost, then keep
+        reconnecting (with backoff) and resuming - this runs for the
+        whole lifetime of a started client. Cancelling this task (as
+        :meth:`disconnect` does) is the only way to stop it for good.
+        """
+        while True:
+            await self._read_until_disconnected()
+
+            # Drop the dead reader/writer so _send() fails cleanly with
+            # INDIConnectionError instead of writing to a broken socket
+            # while a reconnect is pending.
+            self._reader = None
+            self._writer = None
+            self.connected = False
+            if self.on_connection_changed:
+                self.on_connection_changed(False)
+            # The server's state as we knew it (self.devices) is stale
+            # once the socket drops - a fresh getProperties on reconnect
+            # will redefine everything from scratch.
+            await self._reconnect_with_backoff()
+            await self._send(build_get_properties())
+
+    async def _read_until_disconnected(self) -> None:
+        """Read elements until the connection drops, then return."""
         assert self._reader is not None
         try:
             while True:
                 chunk = await self._reader.read(65536)
                 if not chunk:
-                    break
+                    return
                 self._buffer += chunk
                 while True:
                     element_bytes, self._buffer = split_first_element(self._buffer)
                     if element_bytes is None:
                         break
                     self._handle_bytes(element_bytes)
-        except asyncio.CancelledError:
-            raise
         except (ConnectionError, OSError) as err:
             _LOGGER.debug("INDI connection to %s:%s lost: %s", self.host, self.port, err)
-        finally:
-            if self.connected:
-                self.connected = False
-                if self.on_connection_changed:
-                    self.on_connection_changed(False)
+
+    async def _reconnect_with_backoff(self) -> None:
+        """Keep retrying the TCP connection until it succeeds.
+
+        Cancelling the surrounding task (e.g. via :meth:`disconnect`) is
+        the only way out of this loop.
+        """
+        self._buffer = b""
+        delay = self._RECONNECT_INITIAL_DELAY
+        while True:
+            await asyncio.sleep(delay)
+            try:
+                await self._open_connection()
+            except INDIConnectionError as err:
+                delay = min(delay * 2, self._RECONNECT_MAX_DELAY)
+                _LOGGER.debug(
+                    "Reconnect to indiserver at %s:%s failed: %s (retrying in %.0fs)",
+                    self.host,
+                    self.port,
+                    err,
+                    delay,
+                )
+                continue
+            self.connected = True
+            if self.on_connection_changed:
+                self.on_connection_changed(True)
+            return
 
     def _handle_bytes(self, raw: bytes) -> None:
         try:
