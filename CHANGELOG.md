@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1 - 2026-09-25
+
+- **Automatic reconnection**: if the TCP connection to `indiserver` drops (server restart, network blip, USB-triggered driver crash), `INDIClient` now keeps retrying with exponential backoff (5s up to 60s) and re-sends `getProperties` on success, instead of leaving the integration permanently unavailable until a manual reload. Fixes #5.
+
 ## 1.2.0 - 2026-09-04
 
 Follow-up fixes to 1.1.0's camera support, from CodeRabbit review on #3:

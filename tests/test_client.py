@@ -6,6 +6,7 @@ handed it a complete element - no Home Assistant or network required.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 
 from indi.client import INDIClient
@@ -68,3 +69,63 @@ def test_blob_malformed_data_does_not_update_or_fire_callback():
     assert len(updates) == 1  # no second callback for the bad update
     element = client.devices["CCD Simulator"]["CCD1"].elements["CCD1"]
     assert element.value == b"good frame"  # previous good frame preserved
+
+
+def test_reconnects_after_connection_drop():
+    """The read loop must survive a dropped TCP connection (server
+    restart, network blip, ...) by retrying until it can reconnect -
+    see issue #5. Uses a real loopback TCP server rather than mocks, so
+    the actual asyncio streams are exercised end to end.
+    """
+
+    async def scenario() -> None:
+        connection_count = 0
+        got_second_connection = asyncio.Event()
+
+        async def handle(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            nonlocal connection_count
+            connection_count += 1
+            if connection_count == 1:
+                # Consume the client's getProperties before closing, so
+                # the client's write doesn't race a socket that already
+                # went away.
+                await reader.read(65536)
+                writer.close()
+                await writer.wait_closed()
+                return
+            got_second_connection.set()
+            try:
+                while await reader.read(65536):
+                    pass
+            except (ConnectionError, OSError):
+                pass
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        host, port = server.sockets[0].getsockname()[:2]
+
+        client = INDIClient(host, port)
+        client._RECONNECT_INITIAL_DELAY = 0.01
+        client._RECONNECT_MAX_DELAY = 0.01
+
+        connection_states: list[bool] = []
+        client.on_connection_changed = connection_states.append
+
+        try:
+            await client.connect()
+            await client.start()
+
+            await asyncio.wait_for(got_second_connection.wait(), timeout=5)
+            # Give the read task a moment to process the reconnect and
+            # flip `connected` back on before asserting.
+            await asyncio.sleep(0.05)
+
+            assert connection_states == [True, False, True]
+            assert client.connected is True
+        finally:
+            await client.disconnect()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(scenario())
