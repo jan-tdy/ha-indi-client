@@ -4,6 +4,7 @@ from __future__ import annotations
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -24,14 +25,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     message_sensors: dict[str, INDIMessageSensor] = {}
 
     def _ensure_message_sensor(device: str) -> INDIMessageSensor | None:
-        if not device or device in message_sensors:
+        key = device or "_server"
+        if key in message_sensors:
             return None
-        uid = build_unique_id(entry.entry_id, device, "messages")
+        uid = build_unique_id(entry.entry_id, key, "messages")
         if uid in added:
             return None
         added.add(uid)
         sensor = INDIMessageSensor(entry.entry_id, device)
-        message_sensors[device] = sensor
+        message_sensors[key] = sensor
         return sensor
 
     @callback
@@ -146,7 +148,8 @@ class INDISwitchStateSensor(INDIBaseEntity, SensorEntity):
 
 
 class INDIMessageSensor(SensorEntity):
-    """Latest log message of one INDI device, with recent history as an attribute."""
+    """Latest log message of one INDI device (or the server itself, when
+    ``device`` is empty), with recent history as an attribute."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
@@ -156,9 +159,15 @@ class INDIMessageSensor(SensorEntity):
     def __init__(self, entry_id: str, device: str) -> None:
         self._entry_id = entry_id
         self._device = device
-        self._attr_unique_id = build_unique_id(entry_id, device, "messages")
+        self._attr_unique_id = build_unique_id(entry_id, device or "_server", "messages")
         self._attr_name = "Last message"
-        self._attr_device_info = device_info(entry_id, device)
+        if device:
+            self._attr_device_info = device_info(entry_id, device)
+        else:
+            # Server-wide message (no device attribute): attach to the
+            # existing "INDI Server (host:port)" hub device instead of
+            # creating a new one for an empty device name.
+            self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, entry_id)})
         self._history: list[tuple[str, str]] = []
         self._latest: str | None = None
 

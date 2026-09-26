@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2 - 2026-09-26
+
+- **Fixed server-level messages being silently dropped**: INDI `<message>` elements sent without a `device` attribute (server-wide messages from `indiserver` itself, not tied to any driver) were received and buffered internally but never surfaced anywhere in Home Assistant, because the message sensor factory bailed out on an empty device name. A dedicated "Last message" sensor is now created for these too, attached to the existing "INDI Server (host:port)" hub device. Fixes #6.
+
 ## 1.2.1 - 2026-09-25
 
 - **Automatic reconnection**: if the TCP connection to `indiserver` drops (server restart, network blip, USB-triggered driver crash), `INDIClient` now keeps retrying with exponential backoff (5s up to 60s) and re-sends `getProperties` on success, instead of leaving the integration permanently unavailable until a manual reload. Fixes #5.
