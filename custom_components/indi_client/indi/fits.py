@@ -9,6 +9,9 @@ grayscale image HDU into an array suitable for a quick preview:
 - No debayering: a one-shot-color (OSC) camera's raw Bayer frame is
   decoded as plain grayscale, so previews from those cameras show the
   Bayer mosaic pattern rather than a demosaiced color image.
+- 3-plane RGB cubes (``NAXIS=3``, ``NAXIS3=3`` - the layout a driver
+  sends once it has already debayered a frame) are supported as a
+  distinct color preview path via ``decode_image()``.
 
 Pure numpy, no Home Assistant dependency, so it stays unit testable on
 its own.
@@ -70,6 +73,29 @@ def _parse_header(data: bytes) -> tuple[dict[str, object], int]:
     return header, pos
 
 
+def _decode_pixels(
+    data: bytes, header: dict[str, object], data_start: int, bitpix: int, width: int, height: int, planes: int
+) -> np.ndarray:
+    dtype = _BITPIX_DTYPE.get(bitpix)
+    if dtype is None:
+        raise FITSError(f"unsupported BITPIX={bitpix}")
+
+    itemsize = abs(bitpix) // 8
+    count = width * height * planes
+    raw = data[data_start : data_start + count * itemsize]
+    if len(raw) < count * itemsize:
+        raise FITSError("truncated FITS pixel data")
+
+    shape = (planes, height, width) if planes > 1 else (height, width)
+    array = np.frombuffer(raw, dtype=dtype, count=count).reshape(shape).astype(np.float64)
+
+    bzero = float(header.get("BZERO", 0.0))
+    bscale = float(header.get("BSCALE", 1.0))
+    if bzero or bscale != 1.0:
+        array = array * bscale + bzero
+    return array
+
+
 def decode_grayscale(data: bytes) -> np.ndarray:
     """Decode a simple 2-D FITS image HDU into a ``float64`` array."""
     if data[:6] != b"SIMPLE":
@@ -81,28 +107,47 @@ def decode_grayscale(data: bytes) -> np.ndarray:
         raise FITSError(f"unsupported NAXIS={naxis} (only 2-D images are supported)")
 
     bitpix = int(header.get("BITPIX", 0))
-    dtype = _BITPIX_DTYPE.get(bitpix)
-    if dtype is None:
-        raise FITSError(f"unsupported BITPIX={bitpix}")
-
     try:
         width = int(header["NAXIS1"])
         height = int(header["NAXIS2"])
     except KeyError as err:
         raise FITSError(f"missing {err} in FITS header") from err
 
-    itemsize = abs(bitpix) // 8
-    count = width * height
-    raw = data[data_start : data_start + count * itemsize]
-    if len(raw) < count * itemsize:
-        raise FITSError("truncated FITS pixel data")
+    return _decode_pixels(data, header, data_start, bitpix, width, height, 1)
 
-    array = np.frombuffer(raw, dtype=dtype, count=count).reshape(height, width).astype(np.float64)
 
-    bzero = float(header.get("BZERO", 0.0))
-    bscale = float(header.get("BSCALE", 1.0))
-    if bzero or bscale != 1.0:
-        array = array * bscale + bzero
+def decode_image(data: bytes) -> np.ndarray:
+    """Decode a simple 2-D grayscale or 3-plane RGB FITS image HDU.
+
+    Returns a ``float64`` array of shape ``(height, width)`` for a
+    grayscale image, or ``(height, width, 3)`` for a 3-plane RGB cube
+    (``NAXIS=3`` with ``NAXIS3=3``) - the layout INDI drivers use for a
+    frame that has already been debayered into color planes.
+    """
+    if data[:6] != b"SIMPLE":
+        raise FITSError("not a FITS file (missing SIMPLE header)")
+
+    header, data_start = _parse_header(data)
+    naxis = int(header.get("NAXIS", 0))
+    if naxis not in (2, 3):
+        raise FITSError(f"unsupported NAXIS={naxis} (only 2-D or 3-plane RGB images are supported)")
+
+    bitpix = int(header.get("BITPIX", 0))
+    try:
+        width = int(header["NAXIS1"])
+        height = int(header["NAXIS2"])
+    except KeyError as err:
+        raise FITSError(f"missing {err} in FITS header") from err
+
+    planes = 1
+    if naxis == 3:
+        planes = int(header.get("NAXIS3", 0))
+        if planes != 3:
+            raise FITSError(f"unsupported NAXIS3={planes} (only 3-plane RGB cubes are supported)")
+
+    array = _decode_pixels(data, header, data_start, bitpix, width, height, planes)
+    if planes == 3:
+        array = np.moveaxis(array, 0, -1)  # (3, height, width) -> (height, width, 3)
     return array
 
 

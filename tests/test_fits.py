@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from indi.fits import FITSError, decode_grayscale, stretch_to_uint8
+from indi.fits import FITSError, decode_grayscale, decode_image, stretch_to_uint8
 
 _DTYPE_BY_BITPIX = {8: ">u1", 16: ">i2", 32: ">i4", -32: ">f4", -64: ">f8"}
 
@@ -35,6 +35,25 @@ def _make_fits(width: int, height: int, bitpix: int, pixel_value: float, *, extr
     dtype = _DTYPE_BY_BITPIX[bitpix]
     data = np.full((height, width), pixel_value, dtype=dtype)
     data_bytes = data.tobytes()
+    data_bytes += b"\x00" * ((-len(data_bytes)) % 2880)
+    return header + data_bytes
+
+
+def _make_rgb_cube_fits(width: int, height: int, bitpix: int, plane_values: tuple[float, float, float]) -> bytes:
+    cards = [
+        _card("SIMPLE", True),
+        _card("BITPIX", bitpix),
+        _card("NAXIS", 3),
+        _card("NAXIS1", width),
+        _card("NAXIS2", height),
+        _card("NAXIS3", 3),
+    ]
+    header = b"".join(cards) + b"END".ljust(80)
+    header += b" " * ((-len(header)) % 2880)
+
+    dtype = _DTYPE_BY_BITPIX[bitpix]
+    planes = [np.full((height, width), value, dtype=dtype) for value in plane_values]
+    data_bytes = b"".join(plane.tobytes() for plane in planes)
     data_bytes += b"\x00" * ((-len(data_bytes)) % 2880)
     return header + data_bytes
 
@@ -85,6 +104,83 @@ def test_decode_grayscale_rejects_truncated_data():
     truncated = raw[:-2880]  # drop the whole (padded) data block
     with pytest.raises(FITSError):
         decode_grayscale(truncated)
+
+
+def test_decode_image_passes_through_2d_grayscale():
+    array = decode_image(_make_fits(4, 3, 16, 1000))
+    assert array.shape == (3, 4)
+    assert np.all(array == 1000)
+
+
+def test_decode_image_decodes_rgb_cube():
+    raw = _make_rgb_cube_fits(4, 3, 16, (100, 200, 300))
+    array = decode_image(raw)
+    assert array.shape == (3, 4, 3)
+    assert np.all(array[..., 0] == 100)
+    assert np.all(array[..., 1] == 200)
+    assert np.all(array[..., 2] == 300)
+
+
+def test_decode_image_applies_bscale_bzero_to_rgb_cube():
+    cards = [
+        _card("SIMPLE", True),
+        _card("BITPIX", 16),
+        _card("NAXIS", 3),
+        _card("NAXIS1", 2),
+        _card("NAXIS2", 2),
+        _card("NAXIS3", 3),
+        _card("BZERO", 32768),
+        _card("BSCALE", 2),
+    ]
+    header = b"".join(cards) + b"END".ljust(80)
+    header += b" " * ((-len(header)) % 2880)
+    dtype = _DTYPE_BY_BITPIX[16]
+    planes = [np.full((2, 2), value, dtype=dtype) for value in (10, 20, 30)]
+    data_bytes = b"".join(plane.tobytes() for plane in planes)
+    data_bytes += b"\x00" * ((-len(data_bytes)) % 2880)
+
+    array = decode_image(header + data_bytes)
+    assert np.all(array[..., 0] == 10 * 2 + 32768)
+    assert np.all(array[..., 1] == 20 * 2 + 32768)
+    assert np.all(array[..., 2] == 30 * 2 + 32768)
+
+
+def test_decode_image_rejects_non_rgb_cube_plane_count():
+    cards = [
+        _card("SIMPLE", True),
+        _card("BITPIX", 16),
+        _card("NAXIS", 3),
+        _card("NAXIS1", 4),
+        _card("NAXIS2", 4),
+        _card("NAXIS3", 5),
+    ]
+    header = b"".join(cards) + b"END".ljust(80)
+    header += b" " * ((-len(header)) % 2880)
+    with pytest.raises(FITSError):
+        decode_image(header)
+
+
+def test_decode_image_rejects_unsupported_naxis():
+    cards = [
+        _card("SIMPLE", True),
+        _card("BITPIX", 16),
+        _card("NAXIS", 1),
+        _card("NAXIS1", 4),
+    ]
+    header = b"".join(cards) + b"END".ljust(80)
+    header += b" " * ((-len(header)) % 2880)
+    with pytest.raises(FITSError):
+        decode_image(header)
+
+
+def test_stretch_to_uint8_handles_rgb_array():
+    array = np.zeros((2, 2, 3))
+    array[..., 0] = 0.0
+    array[..., 1] = 500.0
+    array[..., 2] = 1000.0
+    result = stretch_to_uint8(array, low_pct=0, high_pct=100)
+    assert result.shape == (2, 2, 3)
+    assert result.dtype == np.uint8
 
 
 def test_stretch_to_uint8_full_range():

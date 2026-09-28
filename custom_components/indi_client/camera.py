@@ -22,7 +22,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DATA_ADDED_ENTITIES, DATA_CLIENT, DOMAIN, signal_new_property
 from .entity import INDIElementEntity, build_unique_id
-from .indi.fits import FITSError, decode_grayscale, stretch_to_uint8
+from .indi.fits import FITSError, decode_image, stretch_to_uint8
 from .indi.model import INDIProperty
 
 _LOGGER = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ class INDICamera(INDIElementEntity, Camera):
 
     def _render_fits_preview(self, raw: bytes) -> bytes | None:
         try:
-            array = decode_grayscale(raw)
+            array = decode_image(raw)
         except FITSError as err:
             _LOGGER.debug("Could not decode FITS preview for %s: %s", self.entity_id, err)
             return None
@@ -91,7 +91,8 @@ class INDICamera(INDIElementEntity, Camera):
         from PIL import Image  # local import: only needed once a frame actually arrives
 
         pixels = stretch_to_uint8(array)
-        image = Image.fromarray(pixels, mode="L")
+        mode = "RGB" if pixels.ndim == 3 else "L"
+        image = Image.fromarray(pixels, mode=mode)
         buffer = io.BytesIO()
         image.save(buffer, format="JPEG", quality=85)
         return buffer.getvalue()
