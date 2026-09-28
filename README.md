@@ -200,8 +200,10 @@ automation:
 ## Known limitations
 
 - **Camera previews are a quick look, not calibrated/processed data.** Frames are decoded and
-  displayed with a simple percentile-clip stretch - there's no debayering (a one-shot-color camera's
-  raw Bayer frame shows as a grayscale mosaic pattern), no dark/flat calibration, no plate solving.
+  displayed with a simple percentile-clip stretch - there's no dark/flat calibration, no plate
+  solving. A driver's raw single-plane Bayer frame is *not* debayered by this integration and shows
+  as a grayscale mosaic pattern; a 3-plane RGB cube (`NAXIS=3`, one plane each for R/G/B - what a
+  driver sends once it has already debayered the frame itself) is stretched and shown in color.
   Use CCDciel/KStars for actual image processing; this is just a "is it working / roughly in focus"
   preview inside HA. Non-FITS, non-JPEG BLOB formats (e.g. `.xisf`) aren't decoded.
 - **Multi-element number vectors** (e.g. `EQUATORIAL_EOD_COORD` with RA + DEC for a GOTO) are

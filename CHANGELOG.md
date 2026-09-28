@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0 - 2026-09-28
+
+- **Camera preview support for 3-plane RGB cube FITS frames**: some drivers send already-debayered
+  color frames as a FITS cube (`NAXIS=3`, `NAXIS3=3` - one plane each for R, G and B) rather than a
+  plain 2-D image. Previously `decode_grayscale` rejected any `NAXIS != 2`, so these frames produced
+  no camera preview at all. A new `decode_image()` handles both the existing 2-D grayscale case and
+  this 3-plane RGB case, and the camera entity now renders an RGB JPEG preview for the latter. Fixes #7.
+
 ## 1.2.2 - 2026-09-26
 
 - **Fixed server-level messages being silently dropped**: INDI `<message>` elements sent without a `device` attribute (server-wide messages from `indiserver` itself, not tied to any driver) were received and buffered internally but never surfaced anywhere in Home Assistant, because the message sensor factory bailed out on an empty device name. A dedicated "Last message" sensor is now created for these too, attached to the existing "INDI Server (host:port)" hub device. Fixes #6.
