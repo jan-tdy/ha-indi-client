@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.1 - 2026-10-08
+
+- **Fixed entities staying "available" with stale values after a device disconnects**: indiserver
+  keeps a disconnected driver's last known properties around and only flips its `CONNECTION.CONNECT`
+  switch to `Off` - it doesn't remove the device. Every entity now also checks its device's
+  `CONNECTION` property (falling back to "connected" for drivers that don't expose one) and
+  re-renders as soon as it changes, instead of only reacting to its own next property update. The
+  dedicated `switch.*_connected` entity is exempt, since it's how you reconnect the device. Fixes #8.
+- **Large camera BLOB frames no longer block the event loop**: a `setBLOBVector` carrying a
+  multi-megabyte FITS frame was XML-parsed and base64-decoded synchronously inside the asyncio read
+  loop, stalling Home Assistant's event loop (and every other integration sharing it) for the
+  duration. BLOB vectors are now parsed and decoded in a thread executor; only the (cheap) merging of
+  the result into state and dispatching callbacks still happens on the event loop. Fixes #9.
+- **Fixed `hassfest` CI failure**: `manifest.json` listed `Pillow>=10.0` as a requirement, which
+  `hassfest`'s bundled-dependency check now rejects since Pillow ships with Home Assistant core
+  itself. Removed it from `requirements` (`numpy` is unaffected and stays).
+
 ## 1.3.0 - 2026-09-28
 
 - **Camera preview support for 3-plane RGB cube FITS frames**: some drivers send already-debayered
