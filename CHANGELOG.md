@@ -13,6 +13,9 @@
   loop, stalling Home Assistant's event loop (and every other integration sharing it) for the
   duration. BLOB vectors are now parsed and decoded in a thread executor; only the (cheap) merging of
   the result into state and dispatching callbacks still happens on the event loop. Fixes #9.
+- **Fixed `hassfest` CI failure**: `manifest.json` listed `Pillow>=10.0` as a requirement, which
+  `hassfest`'s bundled-dependency check now rejects since Pillow ships with Home Assistant core
+  itself. Removed it from `requirements` (`numpy` is unaffected and stays).
 
 ## 1.3.0 - 2026-09-28
 
