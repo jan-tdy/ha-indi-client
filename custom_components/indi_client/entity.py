@@ -51,7 +51,31 @@ class INDIBaseEntity(Entity):
 
     @property
     def available(self) -> bool:
-        return self._client.connected and self._device in self._client.devices
+        return (
+            self._client.connected
+            and self._device in self._client.devices
+            and self._device_connected()
+        )
+
+    def _device_connected(self) -> bool:
+        """Whether the device's own CONNECTION property reports it as On.
+
+        A device stays in ``self._client.devices`` (and keeps its last
+        known property values) after its driver disconnects - indiserver
+        does not delete the properties, it just flips CONNECTION.CONNECT
+        to Off. Without this check every other entity for that device
+        would keep reporting "available" with stale values. Drivers that
+        don't expose CONNECTION at all (or haven't sent it yet) are
+        treated as connected so they aren't penalized for something they
+        never had.
+        """
+        prop = self._client.devices.get(self._device, {}).get("CONNECTION")
+        if prop is None:
+            return True
+        element = prop.elements.get("CONNECT")
+        if element is None:
+            return True
+        return element.value == "On"
 
     def _current_property(self) -> INDIProperty | None:
         return self._client.devices.get(self._device, {}).get(self._prop_name)
@@ -64,6 +88,19 @@ class INDIBaseEntity(Entity):
                 self._handle_property_update,
             )
         )
+        if self._prop_name != "CONNECTION":
+            # `available` also depends on the device's CONNECTION
+            # property (see _device_connected) - without this, an entity
+            # would keep reporting available/stale until its own
+            # property happened to update next, instead of the moment
+            # the device actually disconnects.
+            self.async_on_remove(
+                async_dispatcher_connect(
+                    self.hass,
+                    signal_property_update(self._entry_id, self._device, "CONNECTION"),
+                    self._handle_property_update,
+                )
+            )
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass, signal_connection(self._entry_id), self._handle_connection_change

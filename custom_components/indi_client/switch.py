@@ -82,6 +82,14 @@ class INDIConnectionSwitch(INDIBaseEntity, SwitchEntity):
         self._attr_name = "Connected"
 
     @property
+    def available(self) -> bool:
+        # This entity *is* the device's CONNECTION property - unlike every
+        # other entity for the device, it must stay available while the
+        # device is disconnected, otherwise there would be no way to turn
+        # it back on from Home Assistant.
+        return self._client.connected and self._device in self._client.devices
+
+    @property
     def is_on(self) -> bool | None:
         prop = self._current_property()
         if prop is None:

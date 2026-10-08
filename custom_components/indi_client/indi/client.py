@@ -48,6 +48,52 @@ _VECTOR_TAGS = {
     "setBLOBVector": "BLOB",
 }
 
+_BLOB_VECTOR_PREFIXES = (b"<defBLOBVector", b"<setBLOBVector")
+
+
+def _is_blob_vector_bytes(raw: bytes) -> bool:
+    """Cheaply sniff whether ``raw`` is a BLOB vector, before parsing it.
+
+    ``split_first_element`` always returns element bytes starting right
+    at ``<`` (no leading whitespace), so a plain prefix check is enough
+    and avoids running the XML parser just to decide where to route the
+    element.
+    """
+    return raw.startswith(_BLOB_VECTOR_PREFIXES)
+
+
+def _parse_blob_element(raw: bytes) -> tuple[ET.Element, dict[str, bytes | None]]:
+    """Parse one BLOB vector and decode its payloads.
+
+    This is the CPU-heavy half of handling a BLOB element - XML parsing
+    and base64-decoding a multi-megabyte camera frame are real work, not
+    I/O, so it is run in a thread executor (see
+    :meth:`INDIClient._handle_blob_element`) instead of blocking the
+    asyncio event loop. It has no side effects on client state: results
+    are merged back in by :meth:`INDIClient._handle_vector`, on the loop.
+
+    A decoded value of ``None`` means that element's payload failed to
+    base64-decode (surfaced by the caller the same way the synchronous
+    path does, via ``had_invalid_blob``).
+    """
+    elem = ET.fromstring(raw)
+    decoded: dict[str, bytes | None] = {}
+    for child in elem:
+        if not child.tag.startswith(("def", "one")):
+            continue
+        element_name = child.get("name")
+        if not element_name:
+            continue
+        value_text = (child.text or "").strip()
+        if not value_text:
+            continue
+        cleaned = _WHITESPACE_RE.sub("", value_text)
+        try:
+            decoded[element_name] = base64.b64decode(cleaned, validate=True)
+        except (binascii.Error, ValueError):
+            decoded[element_name] = None
+    return elem, decoded
+
 
 class INDIClientError(Exception):
     """Base error for the INDI client."""
@@ -200,7 +246,10 @@ class INDIClient:
                     element_bytes, self._buffer = split_first_element(self._buffer)
                     if element_bytes is None:
                         break
-                    self._handle_bytes(element_bytes)
+                    if _is_blob_vector_bytes(element_bytes):
+                        await self._handle_blob_element(element_bytes)
+                    else:
+                        self._handle_bytes(element_bytes)
         except (ConnectionError, OSError) as err:
             _LOGGER.debug("INDI connection to %s:%s lost: %s", self.host, self.port, err)
 
@@ -239,6 +288,22 @@ class INDIClient:
             return
         self._handle_element(elem)
 
+    async def _handle_blob_element(self, raw: bytes) -> None:
+        """Parse+decode a BLOB vector off-loop, then merge it in on-loop.
+
+        See :func:`_parse_blob_element` for why this is split out: the
+        expensive parsing/decoding runs in a thread executor, while the
+        actual state update and callback dispatch (which may reach into
+        Home Assistant) still happens here, on the event loop.
+        """
+        loop = asyncio.get_running_loop()
+        try:
+            elem, decoded = await loop.run_in_executor(None, _parse_blob_element, raw)
+        except ET.ParseError as err:
+            _LOGGER.debug("Ignoring malformed INDI element (%s): %.200r", err, raw)
+            return
+        self._handle_vector(elem, is_def=elem.tag.startswith("def"), decoded_blobs=decoded)
+
     def _handle_element(self, elem: ET.Element) -> None:
         tag = elem.tag
         if tag in _VECTOR_TAGS:
@@ -250,7 +315,13 @@ class INDIClient:
         else:
             _LOGGER.debug("Unhandled INDI element: %s", tag)
 
-    def _handle_vector(self, elem: ET.Element, *, is_def: bool) -> None:
+    def _handle_vector(
+        self,
+        elem: ET.Element,
+        *,
+        is_def: bool,
+        decoded_blobs: dict[str, bytes | None] | None = None,
+    ) -> None:
         ptype = _VECTOR_TAGS[elem.tag]
         device = elem.get("device", "")
         name = elem.get("name", "")
@@ -305,7 +376,20 @@ class INDIClient:
                 # only once enable_blob() has been called for it.
                 if child.get("format"):
                     element_obj.format = child.get("format")
-                if value_text:
+                if decoded_blobs is not None:
+                    # Already parsed+decoded off-loop by
+                    # _handle_blob_element/_parse_blob_element - just
+                    # merge the result in (None means decoding failed).
+                    if element_name in decoded_blobs:
+                        decoded = decoded_blobs[element_name]
+                        if decoded is None:
+                            _LOGGER.debug(
+                                "Could not base64-decode BLOB %s.%s", name, element_name
+                            )
+                            had_invalid_blob = True
+                        else:
+                            element_obj.value = decoded
+                elif value_text:
                     # Line-wrapped base64 (embedded newlines every ~72
                     # chars) is normal wire formatting, not corruption -
                     # strip all whitespace first, then validate strictly
