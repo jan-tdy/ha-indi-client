@@ -73,6 +73,25 @@ def _parse_header(data: bytes) -> tuple[dict[str, object], int]:
     return header, pos
 
 
+def _parse_int(header: dict[str, object], key: str, default: int | None = None) -> int:
+    """Read ``key`` from ``header`` as an int, raising ``FITSError`` on any failure.
+
+    Covers both a missing key (unless ``default`` is given) and a key
+    present but holding a value that doesn't parse as a number (a
+    garbled card, or genuinely corrupted/truncated input) - either way
+    the caller wants a clean ``FITSError`` it already knows how to
+    handle, not a bare ``ValueError``/``KeyError``.
+    """
+    if key not in header:
+        if default is not None:
+            return default
+        raise FITSError(f"missing {key!r} in FITS header")
+    try:
+        return int(header[key])
+    except (TypeError, ValueError) as err:
+        raise FITSError(f"invalid {key}={header[key]!r} in FITS header") from err
+
+
 def _decode_pixels(
     data: bytes, header: dict[str, object], data_start: int, bitpix: int, width: int, height: int, planes: int
 ) -> np.ndarray:
@@ -102,16 +121,13 @@ def decode_grayscale(data: bytes) -> np.ndarray:
         raise FITSError("not a FITS file (missing SIMPLE header)")
 
     header, data_start = _parse_header(data)
-    naxis = int(header.get("NAXIS", 0))
+    naxis = _parse_int(header, "NAXIS", 0)
     if naxis != 2:
         raise FITSError(f"unsupported NAXIS={naxis} (only 2-D images are supported)")
 
-    bitpix = int(header.get("BITPIX", 0))
-    try:
-        width = int(header["NAXIS1"])
-        height = int(header["NAXIS2"])
-    except KeyError as err:
-        raise FITSError(f"missing {err} in FITS header") from err
+    bitpix = _parse_int(header, "BITPIX", 0)
+    width = _parse_int(header, "NAXIS1")
+    height = _parse_int(header, "NAXIS2")
 
     return _decode_pixels(data, header, data_start, bitpix, width, height, 1)
 
@@ -128,20 +144,17 @@ def decode_image(data: bytes) -> np.ndarray:
         raise FITSError("not a FITS file (missing SIMPLE header)")
 
     header, data_start = _parse_header(data)
-    naxis = int(header.get("NAXIS", 0))
+    naxis = _parse_int(header, "NAXIS", 0)
     if naxis not in (2, 3):
         raise FITSError(f"unsupported NAXIS={naxis} (only 2-D or 3-plane RGB images are supported)")
 
-    bitpix = int(header.get("BITPIX", 0))
-    try:
-        width = int(header["NAXIS1"])
-        height = int(header["NAXIS2"])
-    except KeyError as err:
-        raise FITSError(f"missing {err} in FITS header") from err
+    bitpix = _parse_int(header, "BITPIX", 0)
+    width = _parse_int(header, "NAXIS1")
+    height = _parse_int(header, "NAXIS2")
 
     planes = 1
     if naxis == 3:
-        planes = int(header.get("NAXIS3", 0))
+        planes = _parse_int(header, "NAXIS3", 0)
         if planes != 3:
             raise FITSError(f"unsupported NAXIS3={planes} (only 3-plane RGB cubes are supported)")
 

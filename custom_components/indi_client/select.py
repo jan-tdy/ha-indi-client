@@ -16,7 +16,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DATA_ADDED_ENTITIES, DATA_CLIENT, DOMAIN, signal_new_property
-from .entity import INDIBaseEntity, build_unique_id
+from .entity import INDIBaseEntity, async_send, build_unique_id
 from .indi.model import INDIProperty
 
 NONE_OPTION = "(none)"
@@ -84,5 +84,5 @@ class INDISelect(INDIBaseEntity, SelectEntity):
             return
         for element_name, element in prop.elements.items():
             if (element.label or element.name) == option:
-                await self._client.set_switch(self._device, prop.name, {element_name: "On"})
+                await async_send(self._client.set_switch(self._device, prop.name, {element_name: "On"}))
                 return

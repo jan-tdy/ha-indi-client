@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.3.2 - 2026-10-09
+
+- **Fixed the read loop stalling after a burst of non-XML garbage**: `split_first_element`
+  resyncs by dropping one leading non-`<` byte at a time, but the read loop treated that the
+  same as "not enough data yet" and went back to waiting on the socket - so more than one
+  leading garbage byte in a single read left already-buffered, parseable data unprocessed
+  until unrelated further socket traffic happened to arrive. The read loop now keeps resyncing
+  from the buffer as long as it keeps shrinking, only waiting on the socket once it stops
+  changing. Fixes #10.
+- **Fixed a malformed FITS header card crashing the camera preview**: `decode_grayscale()`/
+  `decode_image()` converted `NAXIS`/`BITPIX`/`NAXIS1`/`NAXIS2`/`NAXIS3` straight through
+  `int(...)`, which raises a bare `ValueError` (not caught by the `except FITSError` in
+  `camera.py`) when a card's value fails to parse as a number. A new `_parse_int()` helper
+  turns that into the same `FITSError` every other malformed-header case already produces, so
+  the camera degrades gracefully (no preview, logged at debug) instead of crashing
+  `async_camera_image()`. Fixes #11.
+- **Entity writes and services now raise a clean error instead of a raw connection exception
+  while reconnecting**: `number`/`switch`/`select`/`text` entities and the `indi_client.refresh`/
+  `indi_client.set_property` services called `INDIClient` methods that raise
+  `INDIConnectionError` whenever the client is mid-reconnect (`self._writer is None`) - which
+  since the auto-reconnect feature (#5) can be anywhere from 5 to 60 seconds after any dropped
+  connection. That exception was unhandled, surfacing as a raw traceback instead of an
+  actionable message. Entity writes now raise `HomeAssistantError` and the two services raise
+  `ServiceValidationError`, both with a "not connected to indiserver" message. Fixes #13.
+- **Diagnostics download no longer embeds raw BLOB image bytes**: the diagnostics dump included
+  every element's raw `value` verbatim, but a `BLOB` element's value is decoded image bytes
+  (potentially a multi-megabyte camera frame) - not JSON-serializable, and not something that
+  belongs in a downloadable support file. `BLOB` element values are now reported as
+  `<N bytes, format=...>` instead of the raw payload. Fixes #14.
+
 ## 1.3.1 - 2026-10-08
 
 - **Fixed entities staying "available" with stale values after a device disconnects**: indiserver

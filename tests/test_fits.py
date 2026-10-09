@@ -99,6 +99,31 @@ def test_decode_grayscale_rejects_unsupported_bitpix():
         decode_grayscale(raw)
 
 
+def test_decode_grayscale_rejects_non_numeric_naxis1_gracefully():
+    # A header card present but holding a value that doesn't parse as a
+    # number (garbled card, driver bug, or data landing mid-header) must
+    # degrade to the same FITSError every other malformed-header case
+    # gets, not a bare ValueError - see issue #11.
+    raw = _make_fits(4, 4, 16, 5)
+    raw = raw.replace(_card("NAXIS1", 4), _card("NAXIS1", "oops"))
+    with pytest.raises(FITSError):
+        decode_grayscale(raw)
+
+
+def test_decode_grayscale_rejects_non_numeric_bitpix_gracefully():
+    raw = _make_fits(4, 4, 16, 5)
+    raw = raw.replace(_card("BITPIX", 16), _card("BITPIX", "oops"))
+    with pytest.raises(FITSError):
+        decode_grayscale(raw)
+
+
+def test_decode_image_rejects_non_numeric_naxis3_gracefully():
+    raw = _make_rgb_cube_fits(4, 3, 16, (1, 2, 3))
+    raw = raw.replace(_card("NAXIS3", 3), _card("NAXIS3", "oops"))
+    with pytest.raises(FITSError):
+        decode_image(raw)
+
+
 def test_decode_grayscale_rejects_truncated_data():
     raw = _make_fits(4, 4, 16, 5)
     truncated = raw[:-2880]  # drop the whole (padded) data block

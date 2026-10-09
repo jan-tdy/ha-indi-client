@@ -149,7 +149,10 @@ async def _async_register_services(hass: HomeAssistant) -> None:
 
     async def _handle_refresh(call: ServiceCall) -> None:
         client = _get_client(hass, call.data[ATTR_CONFIG_ENTRY_ID])
-        await client.refresh(call.data.get(ATTR_DEVICE))
+        try:
+            await client.refresh(call.data.get(ATTR_DEVICE))
+        except INDIClientError as err:
+            raise ServiceValidationError(f"Not connected to indiserver: {err}") from err
 
     async def _handle_set_property(call: ServiceCall) -> None:
         client = _get_client(hass, call.data[ATTR_CONFIG_ENTRY_ID])
@@ -157,12 +160,15 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         prop_name = call.data[ATTR_PROPERTY]
         values = call.data[ATTR_VALUES]
         ptype = call.data[ATTR_TYPE]
-        if ptype == "Number":
-            await client.set_number(device, prop_name, {k: float(v) for k, v in values.items()})
-        elif ptype == "Text":
-            await client.set_text(device, prop_name, {k: str(v) for k, v in values.items()})
-        else:
-            await client.set_switch(device, prop_name, {k: str(v) for k, v in values.items()})
+        try:
+            if ptype == "Number":
+                await client.set_number(device, prop_name, {k: float(v) for k, v in values.items()})
+            elif ptype == "Text":
+                await client.set_text(device, prop_name, {k: str(v) for k, v in values.items()})
+            else:
+                await client.set_switch(device, prop_name, {k: str(v) for k, v in values.items()})
+        except INDIClientError as err:
+            raise ServiceValidationError(f"Not connected to indiserver: {err}") from err
 
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh, schema=SERVICE_REFRESH_SCHEMA)
     hass.services.async_register(
