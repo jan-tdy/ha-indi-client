@@ -9,13 +9,29 @@ mirroring the pattern used by Home Assistant's MQTT integration.
 from __future__ import annotations
 
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN, signal_connection, signal_property_update
-from .indi.client import INDIClient
+from .indi.client import INDIClient, INDIClientError
 from .indi.model import INDIElement, INDIProperty
+
+
+async def async_send(coro) -> None:
+    """Await an ``INDIClient`` write call, as entities make it.
+
+    A write made while a reconnect is in progress (``INDIClient._writer``
+    is ``None``) raises ``INDIConnectionError`` straight out of
+    ``INDIClient._send`` - surface that as a clean, actionable
+    ``HomeAssistantError`` instead of an unhandled traceback out of a
+    Home Assistant entity service call.
+    """
+    try:
+        await coro
+    except INDIClientError as err:
+        raise HomeAssistantError(f"Not connected to indiserver: {err}") from err
 
 
 def build_unique_id(entry_id: str, device: str, prop: str, element: str | None = None) -> str:

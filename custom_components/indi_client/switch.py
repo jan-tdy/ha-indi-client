@@ -9,7 +9,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DATA_ADDED_ENTITIES, DATA_CLIENT, DOMAIN, signal_new_property
-from .entity import INDIBaseEntity, INDIElementEntity, build_unique_id
+from .entity import INDIBaseEntity, INDIElementEntity, async_send, build_unique_id
 from .indi.model import INDIProperty
 
 CONNECTION_VECTOR = "CONNECTION"
@@ -61,13 +61,13 @@ class INDISwitch(INDIElementEntity, SwitchEntity):
         prop = self._current_property()
         if prop is None:
             return
-        await self._client.set_switch(self._device, prop.name, {self._element_name: "On"})
+        await async_send(self._client.set_switch(self._device, prop.name, {self._element_name: "On"}))
 
     async def async_turn_off(self, **kwargs) -> None:
         prop = self._current_property()
         if prop is None:
             return
-        await self._client.set_switch(self._device, prop.name, {self._element_name: "Off"})
+        await async_send(self._client.set_switch(self._device, prop.name, {self._element_name: "Off"}))
 
 
 class INDIConnectionSwitch(INDIBaseEntity, SwitchEntity):
@@ -98,7 +98,7 @@ class INDIConnectionSwitch(INDIBaseEntity, SwitchEntity):
         return element.value == "On" if element else None
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self._client.set_switch(self._device, CONNECTION_VECTOR, {CONNECT_ELEMENT: "On"})
+        await async_send(self._client.set_switch(self._device, CONNECTION_VECTOR, {CONNECT_ELEMENT: "On"}))
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self._client.set_switch(self._device, CONNECTION_VECTOR, {DISCONNECT_ELEMENT: "On"})
+        await async_send(self._client.set_switch(self._device, CONNECTION_VECTOR, {DISCONNECT_ELEMENT: "On"}))

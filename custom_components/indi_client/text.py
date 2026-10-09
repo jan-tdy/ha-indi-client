@@ -8,7 +8,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DATA_ADDED_ENTITIES, DATA_CLIENT, DOMAIN, signal_new_property
-from .entity import INDIElementEntity, build_unique_id
+from .entity import INDIElementEntity, async_send, build_unique_id
 from .indi.model import INDIProperty
 
 
@@ -48,4 +48,4 @@ class INDIText(INDIElementEntity, TextEntity):
         prop = self._current_property()
         if prop is None:
             return
-        await self._client.set_text(self._device, prop.name, {self._element_name: value})
+        await async_send(self._client.set_text(self._device, prop.name, {self._element_name: value}))

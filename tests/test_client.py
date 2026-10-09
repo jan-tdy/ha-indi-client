@@ -191,6 +191,52 @@ def test_blob_vector_over_wire_is_decoded_via_read_loop():
     asyncio.run(scenario())
 
 
+def test_read_loop_resyncs_past_multibyte_garbage_without_extra_socket_read():
+    """A burst of several leading non-'<' bytes in a single socket read
+    must not stall the read loop waiting for more data that may never
+    arrive - see issue #10. The server here sends garbage immediately
+    followed by one valid element in the *same* write and then nothing
+    else, so the test only passes if the client resyncs using bytes
+    already in its buffer instead of blocking on another socket read.
+    """
+
+    async def scenario() -> None:
+        garbage = b"\x00\x01\x02garbage-bytes"  # several leading non-'<' bytes
+        valid = b'<message device="CCD" message="hello"/>'
+
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            await reader.read(65536)  # consume the client's getProperties
+            writer.write(garbage + valid)
+            await writer.drain()
+            try:
+                while await reader.read(65536):
+                    pass
+            except (ConnectionError, OSError):
+                pass
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        host, port = server.sockets[0].getsockname()[:2]
+
+        client = INDIClient(host, port)
+        messages: list[str] = []
+        client.on_message = lambda device, timestamp, message: messages.append(message)
+
+        try:
+            await client.connect()
+            await client.start()
+            for _ in range(200):
+                if messages:
+                    break
+                await asyncio.sleep(0.01)
+            assert messages == ["hello"]
+        finally:
+            await client.disconnect()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(scenario())
+
+
 def test_reconnects_after_connection_drop():
     """The read loop must survive a dropped TCP connection (server
     restart, network blip, ...) by retrying until it can reconnect -

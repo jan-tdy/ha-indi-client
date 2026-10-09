@@ -243,9 +243,17 @@ class INDIClient:
                     return
                 self._buffer += chunk
                 while True:
+                    buf_len_before = len(self._buffer)
                     element_bytes, self._buffer = split_first_element(self._buffer)
                     if element_bytes is None:
-                        break
+                        # A still-incomplete element leaves the buffer
+                        # unchanged - only then do we need more socket
+                        # data. A dropped garbage byte shrinks it, so keep
+                        # resyncing from what's already buffered instead
+                        # of blocking on a read that may never come.
+                        if len(self._buffer) == buf_len_before:
+                            break
+                        continue
                     if _is_blob_vector_bytes(element_bytes):
                         await self._handle_blob_element(element_bytes)
                     else:
