@@ -295,3 +295,63 @@ def test_reconnects_after_connection_drop():
             await server.wait_closed()
 
     asyncio.run(scenario())
+
+
+def test_read_loop_survives_unexpected_callback_exception():
+    """A bug in a consumer callback (e.g. a Home Assistant entity update)
+    must not kill the read-loop task for good - see issue #17. Before the
+    fix, only (ConnectionError, OSError) was caught around element
+    handling, so any other exception propagated out of the task and left
+    it dead with nothing left to drive reconnects or future reads.
+    """
+
+    async def scenario() -> None:
+        connection_count = 0
+        got_second_connection = asyncio.Event()
+        message = b'<message device="CCD" message="hello"/>'
+
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            nonlocal connection_count
+            connection_count += 1
+            await reader.read(65536)  # consume the client's getProperties
+            if connection_count == 1:
+                writer.write(message)
+                await writer.drain()
+            else:
+                got_second_connection.set()
+            try:
+                while await reader.read(65536):
+                    pass
+            except (ConnectionError, OSError):
+                pass
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        host, port = server.sockets[0].getsockname()[:2]
+
+        client = INDIClient(host, port)
+        client._RECONNECT_INITIAL_DELAY = 0.01
+        client._RECONNECT_MAX_DELAY = 0.01
+
+        def boom(device: str, timestamp: str, msg: str) -> None:
+            raise RuntimeError("boom - simulated bug in a consumer callback")
+
+        client.on_message = boom
+
+        try:
+            await client.connect()
+            await client.start()
+
+            await asyncio.wait_for(got_second_connection.wait(), timeout=5)
+            await asyncio.sleep(0.05)
+
+            # The read-loop task must still be alive and reconnected, not
+            # dead from the unhandled exception.
+            assert client._read_task is not None  # noqa: SLF001
+            assert not client._read_task.done()  # noqa: SLF001
+            assert client.connected is True
+        finally:
+            await client.disconnect()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(scenario())

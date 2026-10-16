@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.3 - 2026-10-16
+
+- **Fixed the read loop dying silently on any exception other than a connection error**:
+  `_read_until_disconnected()` only caught `(ConnectionError, OSError)` around element
+  parsing and callback dispatch, so any other unhandled exception (e.g. a bug surfacing
+  from a Home Assistant entity update triggered by `on_property_updated`/`on_message`/etc.)
+  propagated out of the fire-and-forget read-loop task and killed it for good - no more
+  reads, no reconnect attempts, and no error visible anywhere since nothing awaits that
+  task's result. `_read_until_disconnected()` now also catches `Exception` broadly, logs it,
+  and lets `_read_loop()` treat it like a dropped connection (closing the socket if it was
+  still open, then reconnecting) instead of leaving the integration frozen. Fixes #17.
+
 ## 1.3.2 - 2026-10-09
 
 - **Fixed the read loop stalling after a burst of non-XML garbage**: `split_first_element`
