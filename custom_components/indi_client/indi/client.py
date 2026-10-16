@@ -219,9 +219,15 @@ class INDIClient:
         while True:
             await self._read_until_disconnected()
 
-            # Drop the dead reader/writer so _send() fails cleanly with
+            # Drop the reader/writer so _send() fails cleanly with
             # INDIConnectionError instead of writing to a broken socket
-            # while a reconnect is pending.
+            # while a reconnect is pending. On a plain connection drop
+            # the socket is already dead, but an unexpected exception
+            # from element handling can leave a perfectly healthy
+            # connection behind - close it explicitly so its fd isn't
+            # leaked.
+            if self._writer is not None:
+                self._writer.close()
             self._reader = None
             self._writer = None
             self.connected = False
@@ -260,6 +266,12 @@ class INDIClient:
                         self._handle_bytes(element_bytes)
         except (ConnectionError, OSError) as err:
             _LOGGER.debug("INDI connection to %s:%s lost: %s", self.host, self.port, err)
+        except Exception:  # noqa: BLE001 - never let the read loop die silently
+            _LOGGER.exception(
+                "Unexpected error reading from INDI server at %s:%s; reconnecting",
+                self.host,
+                self.port,
+            )
 
     async def _reconnect_with_backoff(self) -> None:
         """Keep retrying the TCP connection until it succeeds.
