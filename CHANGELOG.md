@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.6 - 2026-10-18
+
+- **Fixed `indi_client.set_property` raising a raw `ValueError` instead of
+  `ServiceValidationError` for a non-numeric value on a `Number` property**: the
+  `float(v)` conversion in `_handle_set_property` ran outside any `try`/`except` that
+  understood it, so a bad value surfaced to the user as an unhandled traceback. It's now
+  caught and re-raised as a `ServiceValidationError` naming the offending property.
+- **Fixed `async_setup_entry` leaking the INDI connection when platform setup or service
+  registration fails**: once `client.connect()` succeeded, a failure in
+  `async_forward_entry_setups` or `client.start()` left the entry's `INDIClient` connected
+  and registered in `hass.data` with no way to unload or retry cleanly. Both steps are now
+  wrapped so any failure disconnects the client and removes the entry's data before
+  re-raising.
+- **Fixed the `indi_client.refresh`/`indi_client.set_property` services never being
+  unregistered**: `async_unload_entry` disconnected and dropped the unloaded entry's data
+  but left the domain-wide services registered even after the last config entry was
+  removed. `async_unload_entry` now removes both services once no entries remain.
+
 ## 1.3.5 - 2026-10-18
 
 - **Fixed the options flow not updating the entry's `unique_id`/title after a host/port

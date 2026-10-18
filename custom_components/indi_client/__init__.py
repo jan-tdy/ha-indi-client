@@ -108,17 +108,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await client.connect()
     except (INDIClientError, OSError, TimeoutError) as err:
+        hass.data[DOMAIN].pop(entry.entry_id)
         raise ConfigEntryNotReady(f"Cannot connect to indiserver at {host}:{port}: {err}") from err
 
-    await _async_register_services(hass)
+    try:
+        await _async_register_services(hass)
 
-    # Platforms must subscribe to the client's dispatcher signals before any
-    # data starts flowing, or a property def*Vector arriving in the window
-    # between connecting and a platform's async_setup_entry could be missed
-    # (client.devices would still have it, but no entity would ever be
-    # created for it). So forward to platforms first, then start the client.
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    await client.start()
+        # Platforms must subscribe to the client's dispatcher signals before any
+        # data starts flowing, or a property def*Vector arriving in the window
+        # between connecting and a platform's async_setup_entry could be missed
+        # (client.devices would still have it, but no entity would ever be
+        # created for it). So forward to platforms first, then start the client.
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        await client.start()
+    except Exception:
+        await client.disconnect()
+        hass.data[DOMAIN].pop(entry.entry_id)
+        raise
+
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
@@ -133,6 +140,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         data = hass.data[DOMAIN].pop(entry.entry_id)
         await data[DATA_CLIENT].disconnect()
+        if not hass.data[DOMAIN]:
+            hass.services.async_remove(DOMAIN, SERVICE_REFRESH)
+            hass.services.async_remove(DOMAIN, SERVICE_SET_PROPERTY)
     return unload_ok
 
 
@@ -162,7 +172,11 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         ptype = call.data[ATTR_TYPE]
         try:
             if ptype == "Number":
-                await client.set_number(device, prop_name, {k: float(v) for k, v in values.items()})
+                try:
+                    numeric_values = {k: float(v) for k, v in values.items()}
+                except (TypeError, ValueError) as err:
+                    raise ServiceValidationError(f"Invalid numeric value for {prop_name}: {err}") from err
+                await client.set_number(device, prop_name, numeric_values)
             elif ptype == "Text":
                 await client.set_text(device, prop_name, {k: str(v) for k, v in values.items()})
             else:
