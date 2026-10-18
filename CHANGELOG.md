@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.5 - 2026-10-18
+
+- **Fixed the options flow not updating the entry's `unique_id`/title after a host/port
+  change, and not checking for duplicates**: `INDIClientOptionsFlow.async_step_init` only
+  called `async_update_entry(self.config_entry, data=user_input)`, so changing an entry's
+  host/port left its `unique_id` pointing at the old endpoint - it no longer matched the
+  real connection, a second entry could be pointed at the same `host:port` as an existing
+  one (two clients, duplicate entities) with nothing to stop it, and the stale `unique_id`
+  kept blocking a fresh `user` step for the original host/port even though nothing used it
+  any more. The options step now computes the new `host:port` unique id, aborts with
+  `already_configured` if another entry already has it, strips the host, validates the
+  port to the 1-65535 range, and passes `unique_id=`/`title=` to `async_update_entry` on
+  success. Fixes #21.
+
 ## 1.3.4 - 2026-10-18
 
 - **Fixed `format_number()` emitting invalid sexagesimal fields (e.g. `10:59:60.0`) and
