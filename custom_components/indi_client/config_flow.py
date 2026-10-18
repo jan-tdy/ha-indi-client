@@ -64,22 +64,37 @@ class INDIClientOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         current = self.config_entry.data
         if user_input is not None:
-            host = user_input[CONF_HOST]
+            host = user_input[CONF_HOST].strip()
             port = user_input[CONF_PORT]
-            try:
-                await _test_connection(host, port)
-            except (INDIClientError, OSError, asyncio.TimeoutError, TimeoutError):
-                errors["base"] = "cannot_connect"
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("Unexpected error validating INDI connection")
-                errors["base"] = "unknown"
+            unique_id = f"{host}:{port}"
+            if any(
+                entry.unique_id == unique_id
+                for entry in self.hass.config_entries.async_entries(DOMAIN)
+                if entry.entry_id != self.config_entry.entry_id
+            ):
+                errors["base"] = "already_configured"
             else:
-                self.hass.config_entries.async_update_entry(self.config_entry, data=user_input)
-                return self.async_create_entry(title="", data={})
+                try:
+                    await _test_connection(host, port)
+                except (INDIClientError, OSError, asyncio.TimeoutError, TimeoutError):
+                    errors["base"] = "cannot_connect"
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Unexpected error validating INDI connection")
+                    errors["base"] = "unknown"
+                else:
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry,
+                        data={CONF_HOST: host, CONF_PORT: port},
+                        unique_id=unique_id,
+                        title=f"INDI ({unique_id})",
+                    )
+                    return self.async_create_entry(title="", data={})
         schema = vol.Schema(
             {
                 vol.Required(CONF_HOST, default=current.get(CONF_HOST)): str,
-                vol.Required(CONF_PORT, default=current.get(CONF_PORT, DEFAULT_PORT)): vol.Coerce(int),
+                vol.Required(
+                    CONF_PORT, default=current.get(CONF_PORT, DEFAULT_PORT)
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

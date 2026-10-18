@@ -30,7 +30,8 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to indiserver. Check the host, port, and that indiserver is running and reachable.",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "already_configured": "Another entry is already configured for this host and port."
     }
   },
   "services": {
