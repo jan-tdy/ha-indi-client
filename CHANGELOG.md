@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.4 - 2026-10-18
+
+- **Fixed `format_number()` emitting invalid sexagesimal fields (e.g. `10:59:60.0`) and
+  ignoring the driver's declared precision**: the sexagesimal (`%<w>.<f>m`) branch truncated
+  degrees/minutes and rounded only the seconds field in isolation, so a value like
+  `10.999999` could print `60.0` seconds instead of carrying into minutes (and degrees)
+  - `60` is not a valid seconds (or minutes) field. It also always emitted one decimal
+    place on the seconds regardless of the format's actual precision digit. `format_number()`
+    now rounds the *total* value to the target precision first, then decomposes it into
+    degrees/minutes/seconds with proper integer carry, and honors the precision digit
+    encoded in the format (`.3m` -> `dd:mm`, `.5m` -> `dd:mm:ss`, `.6m`/`.8m`/`.9m` -> 1/2/3
+    decimal places on the seconds), falling back to the `.6m` (1 decimal) behavior for an
+    unrecognized or missing precision digit. Negative values near zero now keep their sign
+    through the carry (e.g. `-0.00001` -> `-0:00:00.0`). Fixes #18.
+
 ## 1.3.3 - 2026-10-16
 
 - **Fixed the read loop dying silently on any exception other than a connection error**:
