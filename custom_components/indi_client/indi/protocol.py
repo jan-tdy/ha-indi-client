@@ -14,6 +14,7 @@ without Home Assistant installed.
 """
 from __future__ import annotations
 
+import re
 from xml.sax.saxutils import escape, quoteattr
 
 _NEW_VECTOR_CHILD_TAG = {
@@ -135,25 +136,70 @@ def parse_number(value: str) -> float:
     return float(value)
 
 
+_SEXAGESIMAL_PRECISION_RE = re.compile(r"\.(\d+)m\s*$")
+
+# Maps the printf precision digit from an INDI "%<w>.<f>m" format string to
+# the number of decimal places shown on the seconds field. Precision 3 has
+# no seconds field at all (handled separately, below) and is not listed
+# here.
+_SEXAGESIMAL_SECOND_DECIMALS = {5: 0, 6: 1, 8: 2, 9: 3}
+
+
 def format_number(value: float, fmt: str | None) -> str:
     """Format a float back into the wire representation expected by INDI.
 
     ``fmt`` is the driver-supplied C ``printf``-style format string from
     the property definition. A trailing ``m`` means sexagesimal
-    (``dd:mm:ss.s``) notation, which has no direct Python ``%`` equivalent
-    and is therefore handled separately.
+    (``dd:mm[:ss[.s]]``) notation, which has no direct Python ``%``
+    equivalent and is therefore handled separately.
     """
     if fmt and fmt.strip().endswith("m"):
-        sign = "-" if value < 0 else ""
-        value = abs(value)
-        degrees = int(value)
-        minutes_full = (value - degrees) * 60
-        minutes = int(minutes_full)
-        seconds = (minutes_full - minutes) * 60
-        return f"{sign}{degrees:d}:{minutes:02d}:{seconds:04.1f}"
+        return _format_sexagesimal(value, fmt.strip())
     if fmt:
         try:
             return fmt % value
         except (TypeError, ValueError):
             pass
     return repr(value)
+
+
+def _format_sexagesimal(value: float, fmt: str) -> str:
+    """Format ``value`` as ``dd:mm[:ss[.s]]`` per the INDI ``%<w>.<f>m`` spec.
+
+    The fractional part of the printf width/precision spec (the digit
+    before the trailing ``m``) encodes the field layout: ``3`` -> ``dd:mm``
+    (no seconds), ``5`` -> ``dd:mm:ss`` (integer seconds), ``6``/``8``/``9``
+    -> ``dd:mm:ss`` with 1/2/3 decimal places on the seconds. An
+    unrecognised or missing precision falls back to the ``.6m`` behaviour
+    (1 decimal place) rather than raising.
+
+    The total value is rounded to the target precision *before* being
+    decomposed into degrees/minutes/seconds, with proper carry, so a value
+    that rounds up (e.g. ``10.999999`` degrees) never prints an invalid
+    field such as ``60.0`` seconds or ``60`` minutes.
+    """
+    match = _SEXAGESIMAL_PRECISION_RE.search(fmt)
+    precision = int(match.group(1)) if match else 6
+
+    sign = "-" if value < 0 else ""
+    total_seconds = abs(value) * 3600.0
+
+    if precision == 3:
+        # dd:mm only - round to the nearest whole minute.
+        total_minutes = round(total_seconds / 60.0)
+        degrees, minutes = divmod(int(total_minutes), 60)
+        return f"{sign}{degrees:d}:{minutes:02d}"
+
+    decimals = _SEXAGESIMAL_SECOND_DECIMALS.get(precision, 1)
+    scale = 10**decimals
+    # Round the total seconds to the target precision as a single integer
+    # (in units of 1/scale seconds) so the degrees/minutes/seconds carry
+    # falls out of plain integer arithmetic, with no leftover float error.
+    scaled_total = round(total_seconds * scale)
+    whole_seconds, frac = divmod(scaled_total, scale)
+    minutes, seconds = divmod(int(whole_seconds), 60)
+    degrees, minutes = divmod(minutes, 60)
+
+    if decimals == 0:
+        return f"{sign}{degrees:d}:{minutes:02d}:{seconds:02d}"
+    return f"{sign}{degrees:d}:{minutes:02d}:{seconds:02d}.{frac:0{decimals}d}"

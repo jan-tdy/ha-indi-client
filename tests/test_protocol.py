@@ -1,6 +1,8 @@
 """Unit tests for the pure-Python INDI protocol helpers (no Home Assistant required)."""
 from __future__ import annotations
 
+import pytest
+
 from indi.protocol import (
     build_enable_blob,
     build_get_properties,
@@ -80,6 +82,52 @@ def test_format_number_sexagesimal_roundtrip():
 
 def test_format_number_no_format_falls_back_to_repr():
     assert format_number(12.5, None) == "12.5"
+
+
+@pytest.mark.parametrize(
+    ("value", "fmt", "expected"),
+    [
+        # Rounding up to the next whole minute must carry into the degrees,
+        # never print a 60-seconds (or 60-minutes) field.
+        (10.999999, "%9.6m", "11:00:00.0"),
+        (59.99999, "%9.6m", "60:00:00.0"),
+        (0.99999999, "%9.6m", "1:00:00.0"),
+        # Precision-digit field layouts per the INDI "%<w>.<f>m" spec.
+        (10.5, "%9.3m", "10:30"),
+        (10.5, "%9.5m", "10:30:00"),
+        (10.5, "%9.6m", "10:30:00.0"),
+        (10.5, "%9.8m", "10:30:00.00"),
+        (10.5, "%9.9m", "10:30:00.000"),
+        # .3m rounds to the nearest minute, carrying into degrees too.
+        (10.99999, "%9.3m", "11:00"),
+        # Unrecognised/missing precision digit falls back to .6m (1 decimal).
+        (10.5, "%9.7m", "10:30:00.0"),
+        (10.5, "%9m", "10:30:00.0"),
+        # Negative values near zero keep their sign through the carry.
+        (-0.00001, "%9.6m", "-0:00:00.0"),
+        (-10.5, "%9.6m", "-10:30:00.0"),
+    ],
+)
+def test_format_number_sexagesimal_variants(value, fmt, expected):
+    assert format_number(value, fmt) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "fmt"),
+    [
+        (10.5, "%9.3m"),
+        (10.5, "%9.5m"),
+        (10.5, "%9.6m"),
+        (10.5, "%9.8m"),
+        (10.5, "%9.9m"),
+        (-10.5, "%9.6m"),
+        (-0.00001, "%9.6m"),
+        (10.999999, "%9.6m"),
+    ],
+)
+def test_format_number_sexagesimal_roundtrips_for_each_precision(value, fmt):
+    formatted = format_number(value, fmt)
+    assert abs(parse_number(formatted) - value) < 1e-3
 
 
 def test_build_new_vector_switch():
