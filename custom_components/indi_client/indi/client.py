@@ -127,6 +127,11 @@ class INDIClient:
         self._writer: asyncio.StreamWriter | None = None
         self._buffer = b""
         self._read_task: asyncio.Task | None = None
+        # BLOB enablement is per-connection (see enable_blob below), so a
+        # reconnect must replay it - otherwise the driver silently stops
+        # sending frames for every BLOB vector a camera entity enabled on
+        # the previous connection.
+        self._enabled_blobs: dict[tuple[str, str | None], str] = {}
 
     async def connect(self) -> None:
         """Open the TCP connection to indiserver.
@@ -177,10 +182,34 @@ class INDIClient:
         """Re-request property definitions, optionally for one device."""
         await self._send(build_get_properties(device=device))
 
-    async def set_number(self, device: str, name: str, values: dict[str, float]) -> None:
-        """Send a ``newNumberVector`` for one or more elements."""
+    def _current_values(self, device: str, name: str) -> dict[str, str]:
+        """Return a vector's current element values as wire-format strings.
+
+        Some drivers reject a ``new*Vector`` that only lists the elements
+        being changed and require every element of the vector on each
+        request. Callers build on top of this so a partial ``values``
+        dict from an entity or the ``set_property`` service still ends up
+        sending the whole vector.
+        """
         prop = self.devices.get(device, {}).get(name)
-        payload: dict[str, str] = {}
+        if prop is None:
+            return {}
+        values: dict[str, str] = {}
+        for element_name, element in prop.elements.items():
+            if element.value is None:
+                continue
+            if prop.ptype == "Number":
+                values[element_name] = format_number(element.value, element.format)
+            else:
+                values[element_name] = str(element.value)
+        return values
+
+    async def set_number(self, device: str, name: str, values: dict[str, float]) -> None:
+        """Send a ``newNumberVector``, with the rest of the vector's
+        elements carried forward at their current value - see
+        ``_current_values``."""
+        prop = self.devices.get(device, {}).get(name)
+        payload = self._current_values(device, name)
         for element_name, value in values.items():
             fmt = None
             if prop is not None and element_name in prop.elements:
@@ -189,19 +218,43 @@ class INDIClient:
         await self._send(build_new_vector("Number", device, name, payload))
 
     async def set_text(self, device: str, name: str, values: dict[str, str]) -> None:
-        """Send a ``newTextVector`` for one or more elements."""
-        await self._send(build_new_vector("Text", device, name, values))
+        """Send a ``newTextVector``, with the rest of the vector's
+        elements carried forward at their current value - see
+        ``_current_values``."""
+        payload = self._current_values(device, name)
+        payload.update(values)
+        await self._send(build_new_vector("Text", device, name, payload))
 
     async def set_switch(self, device: str, name: str, values: dict[str, str]) -> None:
-        """Send a ``newSwitchVector`` for one or more elements (values: 'On'/'Off')."""
-        await self._send(build_new_vector("Switch", device, name, values))
+        """Send a ``newSwitchVector`` (values: 'On'/'Off'), with the rest
+        of the vector's elements carried forward at their current value -
+        see ``_current_values``.
+
+        For an exclusive vector (``rule`` ``OneOfMany``/``AtMostOne``),
+        turning one element "On" also turns every other element "Off" in
+        the same request, instead of sending a stale "On" for whichever
+        element was previously selected alongside the new one.
+        """
+        prop = self.devices.get(device, {}).get(name)
+        payload = self._current_values(device, name)
+        payload.update(values)
+        if prop is not None and prop.rule in ("OneOfMany", "AtMostOne"):
+            turned_on = {element_name for element_name, value in values.items() if value == "On"}
+            if turned_on:
+                for element_name in payload:
+                    if element_name not in turned_on:
+                        payload[element_name] = "Off"
+        await self._send(build_new_vector("Switch", device, name, payload))
 
     async def enable_blob(self, device: str, name: str | None = None, mode: str = "Also") -> None:
         """Ask the driver to start sending BLOB (image) data for a property.
 
         Must be called (once per device/vector) before any image data for
-        it will actually arrive - see the module docstring.
+        it will actually arrive - see the module docstring. Remembered so
+        it can be replayed after a reconnect (see ``_read_loop``), since
+        BLOB enablement does not survive a dropped TCP connection.
         """
+        self._enabled_blobs[(device, name)] = mode
         await self._send(build_enable_blob(device, name, mode))
 
     async def _send(self, data: bytes) -> None:
@@ -238,6 +291,12 @@ class INDIClient:
             # will redefine everything from scratch.
             await self._reconnect_with_backoff()
             await self._send(build_get_properties())
+            # BLOB enablement is per-connection, not per-vector - the
+            # redefined defBLOBVectors will be deduplicated by callers
+            # (e.g. camera.py's `added` set) and never trigger a fresh
+            # enable_blob() call, so replay it ourselves here.
+            for (device, name), mode in self._enabled_blobs.items():
+                await self._send(build_enable_blob(device, name, mode))
 
     async def _read_until_disconnected(self) -> None:
         """Read elements until the connection drops, then return."""
