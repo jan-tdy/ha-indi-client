@@ -198,6 +198,37 @@ def test_decode_image_rejects_unsupported_naxis():
         decode_image(header)
 
 
+def test_decode_image_rejects_non_positive_naxis1():
+    """A non-positive NAXISn (issue #24) must raise FITSError, not reach
+    np.frombuffer's `count` as a negative number and blow up with a bare
+    ValueError that camera.py doesn't catch."""
+    cards = [
+        _card("SIMPLE", True),
+        _card("BITPIX", 16),
+        _card("NAXIS", 2),
+        _card("NAXIS1", -4),
+        _card("NAXIS2", 4),
+    ]
+    header = b"".join(cards) + b"END".ljust(80)
+    header += b" " * ((-len(header)) % 2880)
+    with pytest.raises(FITSError):
+        decode_image(header)
+
+
+def test_decode_image_rejects_zero_naxis2():
+    cards = [
+        _card("SIMPLE", True),
+        _card("BITPIX", 16),
+        _card("NAXIS", 2),
+        _card("NAXIS1", 4),
+        _card("NAXIS2", 0),
+    ]
+    header = b"".join(cards) + b"END".ljust(80)
+    header += b" " * ((-len(header)) % 2880)
+    with pytest.raises(FITSError):
+        decode_image(header)
+
+
 def test_stretch_to_uint8_handles_rgb_array():
     array = np.zeros((2, 2, 3))
     array[..., 0] = 0.0

@@ -8,11 +8,14 @@ FITS frames (the format virtually every INDI camera driver uses) are
 decoded and stretched to an 8-bit preview with ``indi.fits`` + numpy, then
 JPEG-encoded with Pillow. Raw JPEG/PNG BLOBs (some drivers offer a
 lightweight preview format) are passed through unchanged when possible.
+A format ending in ``.z`` (e.g. ``.fits.z``) is zlib-compressed per the
+INDI spec and is inflated before any of the above.
 """
 from __future__ import annotations
 
 import io
 import logging
+import zlib
 
 from homeassistant.components.camera import Camera
 from homeassistant.config_entries import ConfigEntry
@@ -70,6 +73,17 @@ class INDICamera(INDIElementEntity, Camera):
             return None
         raw: bytes = element.value
         fmt = (element.format or "").lower()
+
+        if fmt.endswith(".z"):
+            # The INDI spec marks a zlib-compressed payload with a format
+            # ending in ".z" (e.g. ".fits.z") - inflate it before matching
+            # the underlying format below.
+            try:
+                raw = await self.hass.async_add_executor_job(zlib.decompress, raw)
+            except zlib.error as err:
+                _LOGGER.debug("Could not inflate compressed BLOB for %s: %s", self.entity_id, err)
+                return None
+            fmt = fmt[: -len(".z")]
 
         if fmt in _JPEG_EXTENSIONS:
             return raw
