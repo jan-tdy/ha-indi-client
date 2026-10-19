@@ -98,6 +98,11 @@ def _decode_pixels(
     dtype = _BITPIX_DTYPE.get(bitpix)
     if dtype is None:
         raise FITSError(f"unsupported BITPIX={bitpix}")
+    if width <= 0 or height <= 0 or planes <= 0:
+        # A non-positive NAXISn reaches np.frombuffer's `count` below as a
+        # negative number, which raises a bare ValueError instead of the
+        # FITSError callers already know how to handle.
+        raise FITSError(f"invalid image dimensions: {width}x{height}x{planes}")
 
     itemsize = abs(bitpix) // 8
     count = width * height * planes

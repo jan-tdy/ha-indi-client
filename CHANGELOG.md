@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.8 - 2026-10-19
+
+- **Fixed zlib-compressed BLOBs (format ending `.z`) never producing a camera preview
+  (#24)**: the INDI spec marks a compressed payload with a format ending in `.z` (e.g.
+  `.fits.z`), but `camera.py` never inflated it - only the literal `.fits`/`.jpg`-style
+  extensions were matched, so a `.z` frame hit "Unsupported BLOB format" and the camera
+  entity showed nothing. `async_camera_image` now runs `zlib.decompress` (in the
+  executor) and strips the `.z` suffix before matching the underlying format.
+- **Hardened `indi.fits._decode_pixels` against non-positive `NAXIS1`/`NAXIS2`/`NAXIS3`
+  values**: a negative or zero dimension reached `np.frombuffer`'s `count` as a negative
+  number and raised a bare `ValueError`, which `camera.py` didn't catch (it only handles
+  `FITSError`). Non-positive dimensions now raise `FITSError` directly.
+
 ## 1.3.7 - 2026-10-19
 
 - **Fixed camera entities going stale after a reconnect (#23)**: `enableBLOB` is
