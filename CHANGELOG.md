@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.7 - 2026-10-19
+
+- **Fixed camera entities going stale after a reconnect (#23)**: `enableBLOB` is
+  per-connection per the INDI spec, but was only ever sent from `camera.py` the first
+  time a BLOB vector's entity was created. After a dropped connection, the read loop's
+  fresh `getProperties` redefines the same BLOB vectors, which `camera.py`'s `added` set
+  deduplicates - so `enable_blob()` was never called again and the driver stopped
+  sending frames. `INDIClient` now remembers every vector `enable_blob()` was called for
+  and replays those `enableBLOB` requests itself right after each reconnect.
+- **`set_number`/`set_text`/`set_switch` now send the whole vector, not just the changed
+  elements (#29)**: some drivers (e.g. `LX200 OnStep`'s configurable output vectors)
+  reject or ignore a `new*Vector` that only lists the element(s) being changed. Every
+  call now carries the vector's other current element values forward unchanged. For an
+  exclusive switch vector (`rule` `OneOfMany`/`AtMostOne`), turning one element "On" also
+  explicitly turns every other element "Off" in the same request, instead of resending a
+  stale "On" for whichever element was previously selected.
+
 ## 1.3.6 - 2026-10-18
 
 - **Fixed `indi_client.set_property` raising a raw `ValueError` instead of

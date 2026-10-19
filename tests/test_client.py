@@ -10,6 +10,7 @@ import asyncio
 import base64
 
 from indi.client import INDIClient, _is_blob_vector_bytes, _parse_blob_element
+from indi.model import INDIElement, INDIProperty
 from indi.protocol import split_first_element
 
 
@@ -353,5 +354,134 @@ def test_read_loop_survives_unexpected_callback_exception():
             await client.disconnect()
             server.close()
             await server.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_enable_blob_is_replayed_after_reconnect():
+    """BLOB enablement is per-connection (issue #23): a reconnect must
+    resend enableBLOB for every vector a caller (e.g. a camera entity)
+    previously enabled, since the redefined defBLOBVector is deduplicated
+    by the caller and never triggers a fresh enable_blob() call.
+    """
+
+    async def scenario() -> None:
+        connection_count = 0
+        second_connection_requests: list[bytes] = []
+        got_second_enable_blob = asyncio.Event()
+
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            nonlocal connection_count
+            connection_count += 1
+            if connection_count == 1:
+                # getProperties and enableBLOB may arrive coalesced into a
+                # single read - one read is enough to drain them before
+                # dropping the connection.
+                await reader.read(65536)
+                writer.close()
+                await writer.wait_closed()
+                return
+            while True:
+                chunk = await reader.read(65536)
+                if not chunk:
+                    return
+                second_connection_requests.append(chunk)
+                if b"<enableBLOB" in chunk:
+                    got_second_enable_blob.set()
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        host, port = server.sockets[0].getsockname()[:2]
+
+        client = INDIClient(host, port)
+        client._RECONNECT_INITIAL_DELAY = 0.01
+        client._RECONNECT_MAX_DELAY = 0.01
+
+        try:
+            await client.connect()
+            await client.start()
+            await client.enable_blob("CCD Simulator", "CCD1")
+
+            await asyncio.wait_for(got_second_enable_blob.wait(), timeout=5)
+            assert b'device="CCD Simulator"' in b"".join(second_connection_requests)
+            assert b'name="CCD1"' in b"".join(second_connection_requests)
+        finally:
+            await client.disconnect()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def _make_switch_prop(rule: str, elements: dict[str, str]) -> INDIProperty:
+    prop = INDIProperty(
+        device="Dev",
+        name="OUTPUTS",
+        label="Outputs",
+        group="",
+        ptype="Switch",
+        state="Ok",
+        perm="rw",
+        rule=rule,
+        timeout=0.0,
+    )
+    for name, value in elements.items():
+        prop.elements[name] = INDIElement(name=name, label=name, value=value)
+    return prop
+
+
+def test_set_switch_sends_full_vector_for_any_of_many():
+    """issue #29: a driver may require every element of the vector on
+    each newSwitchVector, not just the one being changed. For an
+    AnyOfMany vector, every current element is carried forward unchanged
+    except the one(s) explicitly passed in."""
+
+    async def scenario() -> None:
+        sent: list[bytes] = []
+
+        client = INDIClient("localhost", 7624)
+        client.devices["Dev"] = {
+            "OUTPUTS": _make_switch_prop(
+                "AnyOfMany",
+                {"Unconfigured": "Off", "COOLING_1": "Off", "BLOWING_1": "On"},
+            )
+        }
+        client._writer = object()  # truthy sentinel so _send doesn't raise
+        client._send = lambda data: sent.append(data) or asyncio.sleep(0)
+
+        await client.set_switch("Dev", "OUTPUTS", {"COOLING_1": "On"})
+
+        assert len(sent) == 1
+        payload = sent[0]
+        assert b'name="COOLING_1">On<' in payload
+        assert b'name="BLOWING_1">On<' in payload  # untouched element preserved
+        assert b'name="Unconfigured">Off<' in payload
+
+    asyncio.run(scenario())
+
+
+def test_set_switch_enforces_exclusivity_for_one_of_many():
+    """For a OneOfMany/AtMostOne vector, turning one element 'On' must
+    turn every other element 'Off' in the same request rather than
+    carrying forward a stale 'On' from whichever element was previously
+    selected (e.g. CONNECT vs. DISCONNECT on the CONNECTION vector)."""
+
+    async def scenario() -> None:
+        sent: list[bytes] = []
+
+        client = INDIClient("localhost", 7624)
+        client.devices["Dev"] = {
+            "CONNECTION": _make_switch_prop(
+                "OneOfMany", {"CONNECT": "Off", "DISCONNECT": "On"}
+            )
+        }
+        client._writer = object()
+        client._send = lambda data: sent.append(data) or asyncio.sleep(0)
+
+        await client.set_switch("Dev", "CONNECTION", {"CONNECT": "On"})
+
+        assert len(sent) == 1
+        payload = sent[0]
+        assert b'name="CONNECT">On<' in payload
+        assert b'name="DISCONNECT">Off<' in payload  # not left stale "On"
 
     asyncio.run(scenario())
