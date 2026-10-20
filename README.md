@@ -25,6 +25,9 @@ and, when a property allows it, can send its own commands to change it - bidirec
 > This integration is used in the author's private **DevControl2** system (built for the Bombol.Space telescope hosting
 > facility), but this integration itself is generic - it makes no assumption about any specific installation and works with any standard-compliant INDI driver/device.
 
+<img width="1555" height="929" alt="image" src="https://github.com/user-attachments/assets/f8f44958-91bd-4a4d-a263-9b23721084c0" />
+
+
 ## Why
 
 Typical astronomy setups already run `indiserver` with drivers for the mount, camera, focuser,
