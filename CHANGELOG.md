@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.10 - 2026-10-20
+
+- **Fixed quadratic and unbounded read-buffer handling (#26)**: `split_first_element`
+  rescanned the *entire* buffered payload from scratch on every new socket chunk while
+  an element was still incomplete, so a multi-megabyte BLOB spread across many small
+  reads cost O(n^2) instead of O(n) - confirmed with a benchmark (20 MiB took ~0.56s
+  before the fix, ~0.03s after). It now accepts an opaque `resume` cursor that lets it
+  pick up scanning where it left off instead of re-walking already-confirmed-clean
+  content. A run of several non-`<` garbage bytes was also dropped one byte at a time
+  (each call re-slicing the whole buffer); it's now resynced to the next `<` (or
+  cleared entirely) in a single slice. `INDIClient._buffer` is now a `bytearray` grown
+  with `.extend()` instead of `bytes + bytes`, which copies the whole buffer on every
+  append. Finally, a safety cap (`_MAX_BUFFER_SIZE`, 256 MiB) forces a reconnect if a
+  corrupt stream or hostile/broken peer never completes an element, instead of growing
+  `self.buffer` without bound.
+
 ## 1.3.9 - 2026-10-20
 
 - **Cleared stale device/property state on reconnect (ghost entities, #25)**: the read

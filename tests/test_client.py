@@ -16,8 +16,9 @@ from indi.protocol import split_first_element
 
 def _feed(client: INDIClient, xml: bytes) -> None:
     buf = xml
+    resume = None
     while True:
-        elem, buf = split_first_element(buf)
+        elem, buf, resume = split_first_element(buf, resume)
         if elem is None:
             break
         client._handle_bytes(elem)  # noqa: SLF001 - intentional white-box test
@@ -184,6 +185,130 @@ def test_blob_vector_over_wire_is_decoded_via_read_loop():
             assert updates
             element = client.devices["CCD Simulator"]["CCD1"].elements["CCD1"]
             assert element.value == raw
+        finally:
+            await client.disconnect()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_large_blob_over_many_small_reads_completes_quickly():
+    """A multi-megabyte BLOB spread across many small socket reads must
+    not take quadratically longer to parse than a single big one - see
+    issue #26. Before the fix, each new chunk re-scanned the *entire*
+    buffered payload so far for the next '<', turning this into an O(n^2)
+    operation; this test sends the frame in small enough pieces, and
+    bounds the wall-clock time loosely enough to catch a regression back
+    to that behaviour without being flaky on slow CI runners.
+    """
+
+    async def scenario() -> None:
+        raw = b"x" * (2 * 1024 * 1024)  # 2 MiB raw -> ~2.7 MiB base64
+        encoded = base64.b64encode(raw)
+        frame = _blob_vector("setBLOBVector", payload=encoded)
+
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            await reader.read(65536)  # consume the client's getProperties
+            # Trickle the frame out in small pieces so the client's read
+            # loop has to re-enter its buffer-parsing path many times
+            # while the element is still incomplete.
+            chunk_size = 4096
+            for pos in range(0, len(frame), chunk_size):
+                writer.write(frame[pos : pos + chunk_size])
+                await writer.drain()
+            try:
+                while await reader.read(65536):
+                    pass
+            except (ConnectionError, OSError):
+                pass
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        host, port = server.sockets[0].getsockname()[:2]
+
+        client = INDIClient(host, port)
+        updates = []
+        client.on_property_updated = lambda prop: updates.append(prop)
+
+        try:
+            await client.connect()
+            await client.start()
+            start = asyncio.get_event_loop().time()
+            for _ in range(1000):
+                if updates:
+                    break
+                await asyncio.sleep(0.01)
+            elapsed = asyncio.get_event_loop().time() - start
+            assert updates
+            element = client.devices["CCD Simulator"]["CCD1"].elements["CCD1"]
+            assert element.value == raw
+            # Generous bound: the O(n^2) pre-fix behaviour for a frame
+            # this size took well over a second locally; a healthy
+            # O(n) parse finishes in a few hundredths of a second.
+            assert elapsed < 5.0, f"BLOB parsing took {elapsed:.2f}s - looks quadratic again"
+        finally:
+            await client.disconnect()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_oversized_unterminated_buffer_forces_reconnect():
+    """A stream that never completes an element (corrupt peer, or a BLOB
+    far larger than any real driver would ever send) must not grow
+    ``self._buffer`` without bound - see issue #26. Once buffered data
+    exceeds the safety cap, the client must force a reconnect instead of
+    accumulating memory forever.
+    """
+
+    async def scenario() -> None:
+        connection_count = 0
+        got_second_connection = asyncio.Event()
+
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            nonlocal connection_count
+            connection_count += 1
+            await reader.read(65536)  # consume the client's getProperties
+            if connection_count == 1:
+                # An element that never closes - just an ever-growing
+                # opening tag's worth of attribute-like filler, well past
+                # the (lowered, for this test) buffer cap.
+                writer.write(b'<setBLOBVector device="CCD" name="CCD1">')
+                writer.write(b"<oneBLOB name=\"CCD1\" format=\".fits\">" + b"A" * 20_000)
+                await writer.drain()
+                try:
+                    while await reader.read(65536):
+                        pass
+                except (ConnectionError, OSError):
+                    pass
+                return
+            got_second_connection.set()
+            try:
+                while await reader.read(65536):
+                    pass
+            except (ConnectionError, OSError):
+                pass
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        host, port = server.sockets[0].getsockname()[:2]
+
+        client = INDIClient(host, port)
+        client._RECONNECT_INITIAL_DELAY = 0.01
+        client._RECONNECT_MAX_DELAY = 0.01
+        client._MAX_BUFFER_SIZE = 10_000  # lowered so the test stays small/fast
+
+        try:
+            await client.connect()
+            await client.start()
+
+            await asyncio.wait_for(got_second_connection.wait(), timeout=5)
+            await asyncio.sleep(0.05)
+
+            assert client.connected is True
+            # The oversized, never-completed element must not have
+            # survived into the new connection's state.
+            assert client.devices == {}
         finally:
             await client.disconnect()
             server.close()

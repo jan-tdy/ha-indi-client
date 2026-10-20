@@ -26,31 +26,54 @@ _NEW_VECTOR_CHILD_TAG = {
 _WHITESPACE = b" \t\r\n"
 
 
-def split_first_element(buf: bytes) -> tuple[bytes | None, bytes]:
+def split_first_element(
+    buf: bytes, resume: tuple[int, int, int] | None = None
+) -> tuple[bytes | None, bytes, tuple[int, int, int] | None]:
     """Split off the first complete top-level XML element from ``buf``.
 
-    Returns ``(element_bytes, remainder)``. ``element_bytes`` is ``None``
-    when ``buf`` does not (yet) contain a complete element, in which case
-    ``remainder`` is what should be kept buffered (leading whitespace is
-    trimmed so the buffer does not grow unbounded while idle).
+    Returns ``(element_bytes, remainder, resume)``. ``element_bytes`` is
+    ``None`` when ``buf`` does not (yet) contain a complete element, in
+    which case ``remainder`` is what should be kept buffered (leading
+    whitespace is trimmed so the buffer does not grow unbounded while
+    idle) and ``resume`` is an opaque cursor to hand back on the next
+    call once ``buf`` has grown (by appending more data at the end,
+    never mutating what's already there).
+
+    Passing ``resume`` back in lets the scan pick up where it left off
+    instead of re-scanning content it already confirmed contains no
+    further ``<`` - without it, a multi-megabyte BLOB payload spread
+    across many socket reads would cost O(n^2): each new chunk would
+    trigger a fresh scan of the *entire* buffered payload so far, not
+    just the newly arrived bytes (see issue #26).
     """
     n = len(buf)
-    i = 0
-    while i < n and buf[i : i + 1] in (b" ", b"\t", b"\r", b"\n"):
-        i += 1
-    if i >= n:
-        return None, buf[i:]
-    if buf[i : i + 1] != b"<":
-        # Unexpected byte outside of any tag; drop it and try to resync.
-        return None, buf[i + 1 :]
+    if resume is not None:
+        start, pos, depth = resume
+    else:
+        i = 0
+        while i < n and buf[i : i + 1] in (b" ", b"\t", b"\r", b"\n"):
+            i += 1
+        if i >= n:
+            return None, buf[i:], None
+        if buf[i : i + 1] != b"<":
+            # Unexpected byte(s) outside of any tag (garbage, or noise
+            # from a corrupt/non-INDI peer): jump straight to the next
+            # '<' (or drop everything if there isn't one) in a single
+            # slice, instead of dropping one byte per call - a long
+            # garbage run must not cost O(n) calls each doing an O(n)
+            # copy (see issue #26).
+            next_lt = buf.find(b"<", i + 1)
+            if next_lt == -1:
+                return None, buf[:0], None
+            return None, buf[next_lt:], None
+        start = i
+        depth = 0
+        pos = i
 
-    start = i
-    depth = 0
-    pos = i
     while True:
         pos = buf.find(b"<", pos)
         if pos == -1:
-            return None, buf
+            return None, buf, (start, n, depth)
         tag_start = pos
         j = pos + 1
         in_quote = b""
@@ -65,7 +88,7 @@ def split_first_element(buf: bytes) -> tuple[bytes | None, bytes]:
                 break
             j += 1
         if j >= n:
-            return None, buf  # tag not fully received yet
+            return None, buf, (start, tag_start, depth)  # tag not fully received yet
         tag_end = j
         content = buf[tag_start + 1 : tag_end]
         pos = tag_end + 1
@@ -74,12 +97,12 @@ def split_first_element(buf: bytes) -> tuple[bytes | None, bytes]:
             continue  # processing instruction / comment / doctype
         if content.endswith(b"/"):
             if depth == 0:
-                return buf[start:pos], buf[pos:]
+                return buf[start:pos], buf[pos:], None
             continue
         if content.startswith(b"/"):
             depth -= 1
             if depth == 0:
-                return buf[start:pos], buf[pos:]
+                return buf[start:pos], buf[pos:], None
             continue
         depth += 1
 

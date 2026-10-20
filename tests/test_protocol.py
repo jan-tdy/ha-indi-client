@@ -15,16 +15,18 @@ from indi.protocol import (
 
 def test_split_first_element_self_closing():
     data = b'<getProperties version="1.7"/>'
-    elem, rest = split_first_element(data)
+    elem, rest, resume = split_first_element(data)
     assert elem == data
     assert rest == b""
+    assert resume is None
 
 
 def test_split_first_element_incomplete_returns_none():
     data = b'<defNumberVector device="Foo" name="BAR">'
-    elem, rest = split_first_element(data)
+    elem, rest, resume = split_first_element(data)
     assert elem is None
     assert rest == data
+    assert resume is not None
 
 
 def test_split_first_element_nested_vector_then_message():
@@ -34,28 +36,84 @@ def test_split_first_element_nested_vector_then_message():
         b"</defNumberVector>"
         b'<message device="CCD" message="hello"/>'
     )
-    elem, rest = split_first_element(data)
+    elem, rest, resume = split_first_element(data)
     assert elem.startswith(b"<defNumberVector")
     assert elem.endswith(b"</defNumberVector>")
+    assert resume is None
 
-    elem2, rest2 = split_first_element(rest)
+    elem2, rest2, resume2 = split_first_element(rest)
     assert elem2 == b'<message device="CCD" message="hello"/>'
     assert rest2 == b""
+    assert resume2 is None
 
 
 def test_split_first_element_angle_bracket_inside_attribute_value():
     # '>' is legal, unescaped, inside an XML attribute value - a naive
     # scanner that ignores quoting would cut the tag short here.
     data = b'<oneText name="A" label="1 > 2">hi</oneText>'
-    elem, rest = split_first_element(data)
+    elem, rest, resume = split_first_element(data)
     assert elem == data
     assert rest == b""
+    assert resume is None
 
 
 def test_split_first_element_skips_leading_whitespace():
-    elem, rest = split_first_element(b"   \n\t")
+    elem, rest, resume = split_first_element(b"   \n\t")
     assert elem is None
     assert rest == b""
+    assert resume is None
+
+
+def test_split_first_element_resumes_incomplete_scan_without_rescanning():
+    """A ``resume`` cursor handed back in must let the next call skip
+    straight past content it already confirmed has no further ``<`` -
+    the fix for the O(n^2) BLOB-parsing cost in issue #26. Simulated here
+    as a large payload arriving in two pieces, the same way a multi-
+    megabyte BLOB spans many socket reads.
+    """
+    opening = b'<setBLOBVector device="CCD Simulator" name="CCD1"><oneBLOB name="CCD1" format=".fits">'
+    payload = b"A" * 10_000
+    closing = b"</oneBLOB></setBLOBVector>"
+
+    elem, rest, resume = split_first_element(opening + payload[: len(payload) // 2])
+    assert elem is None
+    assert resume is not None
+    # The resumed scan must not need to re-walk the payload bytes already
+    # confirmed tag-free: the cached position is at or past where the
+    # first half of the payload ends.
+    assert resume[1] >= len(opening)
+
+    full = opening + payload + closing
+    elem2, rest2, resume2 = split_first_element(full, resume)
+    assert elem2 == full
+    assert rest2 == b""
+    assert resume2 is None
+
+
+def test_split_first_element_drops_multibyte_garbage_in_one_slice():
+    """A run of several non-'<' bytes must resync in a single slice, not
+    one byte at a time (issue #26) - otherwise a large garbage burst
+    costs O(n) calls each doing an O(n) copy.
+    """
+    garbage = b"\x00\x01\x02garbage-bytes"
+    valid = b'<message device="CCD" message="hello"/>'
+
+    elem, rest, resume = split_first_element(garbage + valid)
+    assert elem is None
+    assert resume is None
+    assert rest == valid
+
+    elem2, rest2, resume2 = split_first_element(rest)
+    assert elem2 == valid
+    assert rest2 == b""
+    assert resume2 is None
+
+
+def test_split_first_element_all_garbage_clears_buffer():
+    elem, rest, resume = split_first_element(b"\x00\x01\x02garbage-with-no-tag")
+    assert elem is None
+    assert rest == b""
+    assert resume is None
 
 
 def test_parse_number_plain_float():

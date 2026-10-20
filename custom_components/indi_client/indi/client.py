@@ -118,6 +118,13 @@ class INDIClient:
     _WATCHDOG_CHECK_INTERVAL = 15.0
     _WATCHDOG_PING_AFTER_IDLE = 60.0
     _WATCHDOG_DEAD_AFTER_IDLE = 120.0
+    # Safety cap on how much unparsed data may be buffered waiting for one
+    # element to complete. Generous enough for a legitimate, multi-megapixel
+    # camera frame (base64 runs ~1.33x the raw byte count) but still finite,
+    # so a corrupt stream or a hostile/broken peer that never closes a tag
+    # can't grow self._buffer without bound (see issue #26) - it forces a
+    # reconnect instead.
+    _MAX_BUFFER_SIZE = 256 * 1024 * 1024
 
     def __init__(self, host: str, port: int, *, connect_timeout: float = 5.0) -> None:
         self.host = host
@@ -135,7 +142,12 @@ class INDIClient:
         self._connect_timeout = connect_timeout
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
-        self._buffer = b""
+        # A bytearray (not bytes) so new data can be appended in place -
+        # `bytearray.extend` is amortized O(1), whereas `bytes + bytes`
+        # copies the whole (potentially multi-megabyte) buffer on every
+        # socket read (see issue #26).
+        self._buffer = bytearray()
+        self._parse_resume: tuple[int, int, int] | None = None
         self._read_task: asyncio.Task | None = None
         self._watchdog_task: asyncio.Task | None = None
         self._last_data_at = 0.0
@@ -334,10 +346,22 @@ class INDIClient:
                 if not chunk:
                     return
                 self._last_data_at = time.monotonic()
-                self._buffer += chunk
+                self._buffer.extend(chunk)
+                if len(self._buffer) > self._MAX_BUFFER_SIZE:
+                    _LOGGER.warning(
+                        "Buffered %d bytes from indiserver at %s:%s without "
+                        "completing an element; forcing a reconnect (corrupt "
+                        "stream, or a BLOB larger than expected)",
+                        len(self._buffer),
+                        self.host,
+                        self.port,
+                    )
+                    return
                 while True:
                     buf_len_before = len(self._buffer)
-                    element_bytes, self._buffer = split_first_element(self._buffer)
+                    element_bytes, self._buffer, self._parse_resume = split_first_element(
+                        self._buffer, self._parse_resume
+                    )
                     if element_bytes is None:
                         # A still-incomplete element leaves the buffer
                         # unchanged - only then do we need more socket
@@ -366,7 +390,8 @@ class INDIClient:
         Cancelling the surrounding task (e.g. via :meth:`disconnect`) is
         the only way out of this loop.
         """
-        self._buffer = b""
+        self._buffer = bytearray()
+        self._parse_resume = None
         delay = self._RECONNECT_INITIAL_DELAY
         while True:
             await asyncio.sleep(delay)
