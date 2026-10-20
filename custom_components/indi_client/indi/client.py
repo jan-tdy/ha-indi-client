@@ -17,6 +17,7 @@ import base64
 import binascii
 import logging
 import re
+import time
 from collections.abc import Callable
 from xml.etree import ElementTree as ET
 
@@ -108,6 +109,15 @@ class INDIClient:
 
     _RECONNECT_INITIAL_DELAY = 5.0
     _RECONNECT_MAX_DELAY = 60.0
+    # INDI has no protocol-level heartbeat, so a half-open socket (peer
+    # vanished without a FIN/RST - a VPN drop, a sleeping machine, a hard
+    # network reset) looks identical to a healthy but quiet connection:
+    # `self._reader.read()` just blocks forever. The watchdog below
+    # probes with a harmless getProperties once nothing has arrived for
+    # a while, then forces a reconnect if that still gets no response.
+    _WATCHDOG_CHECK_INTERVAL = 15.0
+    _WATCHDOG_PING_AFTER_IDLE = 60.0
+    _WATCHDOG_DEAD_AFTER_IDLE = 120.0
 
     def __init__(self, host: str, port: int, *, connect_timeout: float = 5.0) -> None:
         self.host = host
@@ -127,6 +137,8 @@ class INDIClient:
         self._writer: asyncio.StreamWriter | None = None
         self._buffer = b""
         self._read_task: asyncio.Task | None = None
+        self._watchdog_task: asyncio.Task | None = None
+        self._last_data_at = 0.0
         # BLOB enablement is per-connection (see enable_blob below), so a
         # reconnect must replay it - otherwise the driver silently stops
         # sending frames for every BLOB vector a camera entity enabled on
@@ -143,6 +155,7 @@ class INDIClient:
         that isn't wired up yet.
         """
         await self._open_connection()
+        self._last_data_at = time.monotonic()
         self.connected = True
         if self.on_connection_changed:
             self.on_connection_changed(True)
@@ -158,6 +171,7 @@ class INDIClient:
     async def start(self) -> None:
         """Start the read loop and request property definitions."""
         self._read_task = asyncio.ensure_future(self._read_loop())
+        self._watchdog_task = asyncio.ensure_future(self._watchdog_loop())
         await self._send(build_get_properties())
 
     async def disconnect(self) -> None:
@@ -165,6 +179,9 @@ class INDIClient:
         if self._read_task is not None:
             self._read_task.cancel()
             self._read_task = None
+        if self._watchdog_task is not None:
+            self._watchdog_task.cancel()
+            self._watchdog_task = None
         if self._writer is not None:
             self._writer.close()
             try:
@@ -287,8 +304,18 @@ class INDIClient:
             if self.on_connection_changed:
                 self.on_connection_changed(False)
             # The server's state as we knew it (self.devices) is stale
-            # once the socket drops - a fresh getProperties on reconnect
-            # will redefine everything from scratch.
+            # once the socket drops - indiserver may come back with a
+            # different set of drivers running (or none at all), and
+            # without this, entities for devices that never reappear
+            # would keep reporting "available" with stale, possibly
+            # months-old values forever (ghost entities - see issue
+            # #25). A fresh getProperties on reconnect redefines
+            # whatever is actually still there, from scratch.
+            stale_devices = list(self.devices)
+            self.devices.clear()
+            if self.on_property_deleted:
+                for device in stale_devices:
+                    self.on_property_deleted(device, None)
             await self._reconnect_with_backoff()
             await self._send(build_get_properties())
             # BLOB enablement is per-connection, not per-vector - the
@@ -306,6 +333,7 @@ class INDIClient:
                 chunk = await self._reader.read(65536)
                 if not chunk:
                     return
+                self._last_data_at = time.monotonic()
                 self._buffer += chunk
                 while True:
                     buf_len_before = len(self._buffer)
@@ -354,10 +382,52 @@ class INDIClient:
                     delay,
                 )
                 continue
+            self._last_data_at = time.monotonic()
             self.connected = True
             if self.on_connection_changed:
                 self.on_connection_changed(True)
             return
+
+    async def _watchdog_loop(self) -> None:
+        """Detect a half-open socket and force a reconnect.
+
+        Runs for the whole lifetime of a started client, same as
+        :meth:`_read_loop`. Cancelling this task (as :meth:`disconnect`
+        does) is the only way to stop it for good.
+        """
+        last_ping_at = 0.0
+        while True:
+            await asyncio.sleep(self._WATCHDOG_CHECK_INTERVAL)
+            if not self.connected or self._writer is None:
+                continue
+            idle = time.monotonic() - self._last_data_at
+            if idle < self._WATCHDOG_PING_AFTER_IDLE:
+                continue
+            if idle >= self._WATCHDOG_DEAD_AFTER_IDLE:
+                _LOGGER.warning(
+                    "No data from indiserver at %s:%s for %.0fs; forcing a "
+                    "reconnect (likely a half-open socket)",
+                    self.host,
+                    self.port,
+                    idle,
+                )
+                # Closing the transport from our side unblocks the
+                # read loop's pending `self._reader.read()` with an EOF,
+                # handing control straight back to its normal
+                # disconnect/reconnect handling - no duplicate cleanup
+                # logic needed here.
+                self._writer.close()
+                continue
+            # Idle for a while but not yet declared dead: ping once per
+            # watchdog tick with a harmless getProperties, so a merely
+            # quiet (but healthy) connection gets a chance to prove
+            # itself before we tear it down.
+            if time.monotonic() - last_ping_at >= self._WATCHDOG_CHECK_INTERVAL:
+                last_ping_at = time.monotonic()
+                try:
+                    await self._send(build_get_properties())
+                except INDIClientError:
+                    pass
 
     def _handle_bytes(self, raw: bytes) -> None:
         try:

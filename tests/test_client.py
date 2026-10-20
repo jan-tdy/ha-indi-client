@@ -412,6 +412,143 @@ def test_enable_blob_is_replayed_after_reconnect():
     asyncio.run(scenario())
 
 
+def test_devices_cleared_on_reconnect():
+    """A reconnect must drop stale device/property state (issue #25):
+    otherwise a device that never reappears (indiserver restarted with a
+    different driver set, or just never comes back) keeps reporting
+    "available" with stale values forever - a ghost entity. The client
+    also notifies ``on_property_deleted`` for each device it drops, the
+    same callback a real ``delProperty`` would trigger.
+    """
+
+    async def scenario() -> None:
+        connection_count = 0
+        got_second_connection = asyncio.Event()
+        device_vector = (
+            b'<defNumberVector device="CCD Simulator" name="CCD_TEMPERATURE" '
+            b'label="Temperature" group="Main" state="Ok" perm="ro" timeout="0">'
+            b'<defNumber name="CCD_TEMPERATURE_VALUE" label="Temperature" '
+            b'format="%4.1f" min="-50" max="50" step="0">10.0</defNumber>'
+            b"</defNumberVector>"
+        )
+
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            nonlocal connection_count
+            connection_count += 1
+            await reader.read(65536)  # consume the client's getProperties
+            if connection_count == 1:
+                writer.write(device_vector)
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                return
+            got_second_connection.set()
+            try:
+                while await reader.read(65536):
+                    pass
+            except (ConnectionError, OSError):
+                pass
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        host, port = server.sockets[0].getsockname()[:2]
+
+        client = INDIClient(host, port)
+        # Deliberately slow, so the assertion right after the defNumberVector
+        # arrives can't race the reconnect that follows the server dropping
+        # the first connection.
+        client._RECONNECT_INITIAL_DELAY = 0.3
+        client._RECONNECT_MAX_DELAY = 0.3
+
+        deleted: list[tuple[str, str | None]] = []
+        client.on_property_deleted = lambda device, name: deleted.append((device, name))
+        got_property = asyncio.Event()
+        client.on_property_defined = lambda prop: got_property.set()
+
+        try:
+            await client.connect()
+            await client.start()
+
+            await asyncio.wait_for(got_property.wait(), timeout=5)
+            assert "CCD Simulator" in client.devices
+
+            await asyncio.wait_for(got_second_connection.wait(), timeout=5)
+            await asyncio.sleep(0.05)
+
+            assert client.devices == {}
+            assert deleted == [("CCD Simulator", None)]
+        finally:
+            await client.disconnect()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_watchdog_forces_reconnect_on_half_open_socket():
+    """A half-open socket (peer vanished without a FIN/RST) must not hang
+    the client forever waiting on a read that will never complete - see
+    issue #25. The watchdog pings after a shorter idle window and, once
+    truly dead, force-closes the socket so the normal reconnect path
+    takes over.
+    """
+
+    async def scenario() -> None:
+        connection_count = 0
+        got_second_connection = asyncio.Event()
+        got_ping = asyncio.Event()
+
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            nonlocal connection_count
+            connection_count += 1
+            await reader.read(65536)  # consume the client's getProperties
+            if connection_count == 1:
+                # Simulate a half-open socket: never respond and never
+                # close - just stop reading/writing. The watchdog's ping
+                # arrives here and is deliberately never answered, so the
+                # watchdog must eventually force the socket closed itself.
+                try:
+                    while True:
+                        chunk = await reader.read(65536)
+                        if not chunk:
+                            return
+                        got_ping.set()
+                except (ConnectionError, OSError):
+                    pass
+                return
+            got_second_connection.set()
+            try:
+                while await reader.read(65536):
+                    pass
+            except (ConnectionError, OSError):
+                pass
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        host, port = server.sockets[0].getsockname()[:2]
+
+        client = INDIClient(host, port)
+        client._RECONNECT_INITIAL_DELAY = 0.01
+        client._RECONNECT_MAX_DELAY = 0.01
+        client._WATCHDOG_CHECK_INTERVAL = 0.02
+        client._WATCHDOG_PING_AFTER_IDLE = 0.05
+        client._WATCHDOG_DEAD_AFTER_IDLE = 0.15
+
+        try:
+            await client.connect()
+            await client.start()
+
+            await asyncio.wait_for(got_ping.wait(), timeout=5)
+            await asyncio.wait_for(got_second_connection.wait(), timeout=5)
+            await asyncio.sleep(0.05)
+
+            assert client.connected is True
+        finally:
+            await client.disconnect()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(scenario())
+
+
 def _make_switch_prop(rule: str, elements: dict[str, str]) -> INDIProperty:
     prop = INDIProperty(
         device="Dev",

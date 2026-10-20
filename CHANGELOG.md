@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.9 - 2026-10-20
+
+- **Cleared stale device/property state on reconnect (ghost entities, #25)**: the read
+  loop's reconnect comment claimed "a fresh getProperties on reconnect will redefine
+  everything from scratch", but `self.devices` was never actually cleared. A device that
+  didn't reappear after indiserver restarted with a different driver set (or just never
+  came back) stayed in `self.devices` forever, so `INDIBaseEntity.available` kept
+  reporting it available with months-old stale values. The client now clears `devices`
+  right when the connection drops and fires `on_property_deleted` for each device it
+  drops, the same callback a real `delProperty` triggers.
+- **Added a watchdog for half-open sockets (#25)**: INDI has no protocol-level
+  heartbeat, so a peer that vanishes without a clean FIN/RST (a VPN drop, a sleeping
+  machine, a hard network reset) left `self._reader.read()` blocked forever - the client
+  believed it was still connected and never reconnected. A new watchdog task pings with
+  a harmless `getProperties` after a short idle period, then force-closes the socket
+  (handing control to the existing reconnect logic) if that still gets no response.
+
 ## 1.3.8 - 2026-10-19
 
 - **Fixed zlib-compressed BLOBs (format ending `.z`) never producing a camera preview
