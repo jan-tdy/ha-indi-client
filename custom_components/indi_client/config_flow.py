@@ -8,8 +8,16 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.helpers import selector
 
-from .const import DEFAULT_PORT, DOMAIN
+from .const import (
+    CONF_BLOB_DEVICES,
+    CONF_BLOB_MODE,
+    DEFAULT_BLOB_DEVICES,
+    DEFAULT_BLOB_MODE,
+    DEFAULT_PORT,
+    DOMAIN,
+)
 from .indi.client import INDIClient, INDIClientError
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,13 +96,34 @@ class INDIClientOptionsFlow(config_entries.OptionsFlow):
                         unique_id=unique_id,
                         title=f"INDI ({unique_id})",
                     )
-                    return self.async_create_entry(title="", data={})
+                    options = {
+                        **self.config_entry.options,
+                        CONF_BLOB_DEVICES: user_input.get(CONF_BLOB_DEVICES, DEFAULT_BLOB_DEVICES),
+                        CONF_BLOB_MODE: user_input.get(CONF_BLOB_MODE, DEFAULT_BLOB_MODE),
+                    }
+                    return self.async_create_entry(title="", data=options)
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        client = entry_data.get("client")
+        devices = sorted(client.devices) if client else []
+        selected_devices = self.config_entry.options.get(CONF_BLOB_DEVICES, DEFAULT_BLOB_DEVICES)
+        devices = sorted(set(devices) | set(selected_devices))
         schema = vol.Schema(
             {
                 vol.Required(CONF_HOST, default=current.get(CONF_HOST)): str,
                 vol.Required(
                     CONF_PORT, default=current.get(CONF_PORT, DEFAULT_PORT)
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+                vol.Optional(CONF_BLOB_DEVICES, default=selected_devices): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=devices,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+                vol.Required(
+                    CONF_BLOB_MODE,
+                    default=self.config_entry.options.get(CONF_BLOB_MODE, DEFAULT_BLOB_MODE),
+                ): vol.In(["Never", "Also", "Only"]),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

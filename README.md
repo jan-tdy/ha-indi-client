@@ -88,10 +88,10 @@ So, concretely:
 
 ### Camera previews
 
-BLOB (image) data is opt-in per the INDI protocol - a driver only sends it once a client asks. As
-soon as a `camera` entity for a device's BLOB property (e.g. `CCD1`) is set up, this integration
-sends that request (`enableBLOB ... Also`) automatically, so the camera starts showing the latest
-captured frame with no extra configuration.
+BLOB (image) data is opt-in per the INDI protocol - a driver only sends it once a client asks. In
+the integration options, select which devices may send BLOBs and choose `Never`, `Also`, or `Only`
+for the INDI transfer mode. The device allow-list is empty by default, so no BLOB data is requested
+until devices are selected.
 
 Frames are decoded with a small built-in FITS reader (the format virtually every INDI camera driver
 uses), stretched with a percentile clip for a reasonable preview, and JPEG-encoded (needs `numpy`
@@ -120,6 +120,10 @@ data:
   values:
     PARK: "On"
 ```
+
+Use `indi_client.save_frame` to write the latest received BLOB bytes to a file in a Home Assistant
+allowed directory (for example `/media/frame.fits`). Each newly received BLOB fires the
+`indi_client_frame` event with its config entry, device, property, element, format, and byte size.
 
 ## Installation
 

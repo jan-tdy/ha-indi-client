@@ -24,7 +24,9 @@
         "title": "Zmena pripojenia na indiserver",
         "data": {
           "host": "Host",
-          "port": "Port"
+          "port": "Port",
+          "blob_devices": "Zariadenia, ktoré môžu odosielať BLOB snímky",
+          "blob_mode": "Režim prenosu BLOB"
         }
       }
     },
@@ -72,6 +74,17 @@
           "name": "Hodnoty",
           "description": "Mapa názov elementu -> hodnota, napríklad: PARK nastavené na On."
         }
+      }
+    },
+    "save_frame": {
+      "name": "Uložiť snímku",
+      "description": "Uloží posledné surové BLOB dáta do povolenej cesty na hostiteľovi Home Assistant.",
+      "fields": {
+        "config_entry_id": {"name": "Server", "description": "Konfiguračný záznam INDI Client."},
+        "device": {"name": "Zariadenie", "description": "Názov INDI zariadenia."},
+        "property": {"name": "Property", "description": "Názov BLOB vector property."},
+        "element": {"name": "Element", "description": "Názov BLOB elementu."},
+        "path": {"name": "Cesta", "description": "Cieľový súbor v povolenom adresári."}
       }
     }
   }
