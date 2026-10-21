@@ -24,7 +24,9 @@
         "title": "Update indiserver connection",
         "data": {
           "host": "Host",
-          "port": "Port"
+          "port": "Port",
+          "blob_devices": "Devices allowed to send BLOB frames",
+          "blob_mode": "BLOB transfer mode"
         }
       }
     },
@@ -73,6 +75,17 @@
           "name": "Values",
           "description": "Mapping of element name to value, for example: PARK set to On."
         }
+      }
+    },
+    "save_frame": {
+      "name": "Save frame",
+      "description": "Save the latest raw BLOB frame to an allowed path on the Home Assistant host.",
+      "fields": {
+        "config_entry_id": {"name": "Server", "description": "The INDI Client config entry."},
+        "device": {"name": "Device", "description": "INDI device name."},
+        "property": {"name": "Property", "description": "BLOB vector property name."},
+        "element": {"name": "Element", "description": "BLOB element name."},
+        "path": {"name": "Path", "description": "Destination file path in an allowed directory."}
       }
     }
   }

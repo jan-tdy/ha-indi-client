@@ -135,6 +135,7 @@ class INDIClient:
 
         self.on_property_defined: Callable[[INDIProperty], None] | None = None
         self.on_property_updated: Callable[[INDIProperty], None] | None = None
+        self.on_blob_received: Callable[[INDIProperty, INDIElement], None] | None = None
         self.on_property_deleted: Callable[[str, str | None], None] | None = None
         self.on_message: Callable[[str, str, str], None] | None = None
         self.on_connection_changed: Callable[[bool], None] | None = None
@@ -524,6 +525,7 @@ class INDIClient:
                 prop.label = elem.get("label")
 
         had_invalid_blob = False
+        received_blob_elements: list[INDIElement] = []
         for child in elem:
             if not child.tag.startswith(("def", "one")):
                 continue
@@ -563,6 +565,8 @@ class INDIClient:
                             had_invalid_blob = True
                         else:
                             element_obj.value = decoded
+                            if not is_def and decoded:
+                                received_blob_elements.append(element_obj)
                 elif value_text:
                     # Line-wrapped base64 (embedded newlines every ~72
                     # chars) is normal wire formatting, not corruption -
@@ -572,6 +576,8 @@ class INDIClient:
                     cleaned = _WHITESPACE_RE.sub("", value_text)
                     try:
                         element_obj.value = base64.b64decode(cleaned, validate=True)
+                        if not is_def and element_obj.value:
+                            received_blob_elements.append(element_obj)
                     except (binascii.Error, ValueError) as err:
                         _LOGGER.debug(
                             "Could not base64-decode BLOB %s.%s: %s", name, element_name, err
@@ -594,6 +600,9 @@ class INDIClient:
         callback = self.on_property_defined if is_def else self.on_property_updated
         if callback:
             callback(prop)
+        if not is_def and self.on_blob_received:
+            for element in received_blob_elements:
+                self.on_blob_received(prop, element)
 
         message = elem.get("message")
         if message:

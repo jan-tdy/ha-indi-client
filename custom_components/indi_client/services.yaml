@@ -40,3 +40,30 @@ set_property:
       example: '{"PARK": "On"}'
       selector:
         object:
+save_frame:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: indi_client
+    device:
+      required: true
+      example: "CCD Simulator"
+      selector:
+        text:
+    property:
+      required: true
+      example: "CCD1"
+      selector:
+        text:
+    element:
+      required: true
+      example: "CCD1"
+      selector:
+        text:
+    path:
+      required: true
+      example: "/media/frame.fits"
+      selector:
+        text:

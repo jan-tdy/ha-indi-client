@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 - 2026-10-21
+
+- **Added configurable BLOB delivery and frame archiving (#27)**: BLOB transfers
+  are now opt-in per device, with `Never`, `Also`, and `Only` modes. New
+  `indi_client.save_frame` service writes the latest raw BLOB bytes to a path
+  permitted by Home Assistant, and each received frame fires an
+  `indi_client_frame` event with the device, property, element, format, and size.
+
 ## 1.3.10 - 2026-10-20
 
 - **Fixed quadratic and unbounded read-buffer handling (#26)**: `split_first_element`

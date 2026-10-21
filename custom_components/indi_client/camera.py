@@ -23,7 +23,13 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DATA_ADDED_ENTITIES, DATA_CLIENT, DOMAIN, signal_new_property
+from .const import (
+    DATA_ADDED_ENTITIES,
+    DATA_CLIENT,
+    DOMAIN,
+    blob_mode_for_device,
+    signal_new_property,
+)
 from .entity import INDIElementEntity, build_unique_id
 from .indi.fits import FITSError, decode_image, stretch_to_uint8
 from .indi.model import INDIProperty
@@ -52,7 +58,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(INDICamera(client, entry.entry_id, prop.device, prop, element_name))
         if entities:
             async_add_entities(entities)
-            hass.async_create_task(client.enable_blob(prop.device, prop.name))
+            mode = blob_mode_for_device(entry.options, prop.device)
+            if mode != "Never":
+                hass.async_create_task(client.enable_blob(prop.device, prop.name, mode))
 
     entry.async_on_unload(
         async_dispatcher_connect(hass, signal_new_property(entry.entry_id), _handle_new_property)
