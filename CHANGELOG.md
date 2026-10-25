@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1 - 2026-10-25
+
+- **Split CI validation into separate `hacs.yml` and `hassfest.yml` workflows**:
+  replaces the combined `validate.yml`, matching the conventional HACS repo
+  layout. No functional change to what CI checks.
+
 ## 1.4.0 - 2026-10-21
 
 - **Added configurable BLOB delivery and frame archiving (#27)**: BLOB transfers

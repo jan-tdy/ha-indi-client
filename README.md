@@ -1,7 +1,8 @@
 # INDI Client for Home Assistant
 
 [![HACS Custom][hacs-shield]][hacs-url]
-[![Validate][validate-shield]][validate-url]
+[![HACS Validation][hacs-validate-shield]][hacs-validate-url]
+[![Hassfest][hassfest-shield]][hassfest-url]
 [![Tests][tests-shield]][tests-url]
 [![License: MIT][license-shield]][license-url]
 
@@ -249,8 +250,10 @@ GitHub Release with auto-generated notes by itself - no manual `git tag`/`git pu
 
 [hacs-shield]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
 [hacs-url]: https://github.com/hacs/integration
-[validate-shield]: https://github.com/jan-tdy/ha-indi-client/actions/workflows/validate.yml/badge.svg
-[validate-url]: https://github.com/jan-tdy/ha-indi-client/actions/workflows/validate.yml
+[hacs-validate-shield]: https://github.com/jan-tdy/ha-indi-client/actions/workflows/hacs.yml/badge.svg
+[hacs-validate-url]: https://github.com/jan-tdy/ha-indi-client/actions/workflows/hacs.yml
+[hassfest-shield]: https://github.com/jan-tdy/ha-indi-client/actions/workflows/hassfest.yml/badge.svg
+[hassfest-url]: https://github.com/jan-tdy/ha-indi-client/actions/workflows/hassfest.yml
 [tests-shield]: https://github.com/jan-tdy/ha-indi-client/actions/workflows/test.yml/badge.svg
 [tests-url]: https://github.com/jan-tdy/ha-indi-client/actions/workflows/test.yml
 [license-shield]: https://img.shields.io/badge/license-MIT-blue.svg
