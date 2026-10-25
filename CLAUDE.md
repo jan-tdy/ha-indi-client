@@ -59,4 +59,5 @@ pytest
 ```
 
 CI also runs `hassfest` and the `hacs/action` validator (see
-`.github/workflows/validate.yml`) - both must pass on every PR.
+`.github/workflows/hassfest.yml` and `.github/workflows/hacs.yml`) - both
+must pass on every PR.
