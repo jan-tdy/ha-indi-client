@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.2 - 2026-11-02
+
+- **Redacted sensitive fields from downloadable diagnostics**: the host
+  address and location-revealing property elements (`LAT`, `LONG`, `ELEV`,
+  `OBSERVER`, `SITE`) are now passed through Home Assistant's
+  `async_redact_data` before being included in a config entry's
+  diagnostics dump, so a site's exact coordinates or observer name no
+  longer leak when diagnostics are pasted into a public issue.
+
 ## 1.4.1 - 2026-10-25
 
 - **Split CI validation into separate `hacs.yml` and `hassfest.yml` workflows**:
