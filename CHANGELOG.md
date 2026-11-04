@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.3 - 2026-11-04
+
+- **Moved `save_frame` path handling off the event loop**: path expansion,
+  `resolve()`, the Home Assistant allowed-path check, and the write now run
+  together in a single executor job, so slow or network-mounted storage can
+  no longer stall the event loop. Behaviour and error messages are unchanged.
+
 ## 1.4.2 - 2026-11-02
 
 - **Redacted sensitive fields from downloadable diagnostics**: the host

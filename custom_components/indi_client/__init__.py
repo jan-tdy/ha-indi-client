@@ -174,6 +174,29 @@ def _get_client(hass: HomeAssistant, entry_id: str) -> INDIClient:
     return entry_data[DATA_CLIENT]
 
 
+def _write_frame_file(hass: HomeAssistant, raw_path: str, data: bytes) -> None:
+    """Validate the requested path and write frame bytes to it.
+
+    Performs blocking filesystem I/O (``expanduser``, ``resolve``, the
+    allowed-path check and the write). Must run in the executor, never on
+    the event loop.
+    """
+    target = Path(raw_path).expanduser()
+    if not target.is_absolute():
+        raise ServiceValidationError(
+            "Frame path must be inside a Home Assistant allowed directory"
+        )
+    target = target.resolve()
+    if not hass.config.is_allowed_path(str(target)):
+        raise ServiceValidationError(
+            "Frame path must be inside a Home Assistant allowed directory"
+        )
+    try:
+        target.write_bytes(data)
+    except OSError as err:
+        raise ServiceValidationError(f"Could not save frame to {target}: {err}") from err
+
+
 async def _async_register_services(hass: HomeAssistant) -> None:
     if hass.services.has_service(DOMAIN, SERVICE_REFRESH):
         return
@@ -219,20 +242,9 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             raise ServiceValidationError(
                 f"No frame data is available for {device}.{prop_name}.{element_name}"
             )
-        target = Path(call.data[ATTR_PATH]).expanduser()
-        if not target.is_absolute():
-            raise ServiceValidationError(
-                "Frame path must be inside a Home Assistant allowed directory"
-            )
-        target = target.resolve()
-        if not hass.config.is_allowed_path(str(target)):
-            raise ServiceValidationError(
-                "Frame path must be inside a Home Assistant allowed directory"
-            )
-        try:
-            await hass.async_add_executor_job(target.write_bytes, element.value)
-        except OSError as err:
-            raise ServiceValidationError(f"Could not save frame to {target}: {err}") from err
+        await hass.async_add_executor_job(
+            _write_frame_file, hass, call.data[ATTR_PATH], element.value
+        )
 
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh, schema=SERVICE_REFRESH_SCHEMA)
     hass.services.async_register(
