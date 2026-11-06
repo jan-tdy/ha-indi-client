@@ -128,13 +128,10 @@ allowed directory (for example `/media/frame.fits`). Each newly received BLOB fi
 
 ## Installation
 
-### Via HACS (custom repository)
+### Via HACS/Marketplace
 
-This integration is not yet in the default HACS store. Add it as a custom repository:
-
-1. HACS -> Integrations -> the `⋮` menu (top right) -> **Custom repositories**.
-2. URL: `https://github.com/jan-tdy/ha-indi-client`, category: **Integration**.
-3. Install **INDI Client**, then restart Home Assistant.
+1. HACS/Marketplace -> Explore -> search INDI Client. (WE ARE DEFAULT NOW!)
+2. Install **INDI Client**, then restart Home Assistant.
 
 ### Manual
 
