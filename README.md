@@ -6,7 +6,8 @@
 [![Tests][tests-shield]][tests-url]
 [![License: MIT][license-shield]][license-url]
 
-You can take a look at my issue and pr queue if you are wondering why is something stale for days [here](https://github.com/issues/assigned?q=is%3Aissue+or+is%3Apr+state%3Aopen+archived%3Afalse+user%3Ajan-tdy+sort%3Acreated-asc)
+
+[Install it](#Installation)
 
 A [Home Assistant](https://www.home-assistant.io/) custom integration that connects to a running
 [INDI](https://indilib.org) server (`indiserver`, default TCP port `7624`) **as an additional
@@ -238,7 +239,7 @@ GitHub Release with auto-generated notes by itself - no manual `git tag`/`git pu
 
 [MIT](LICENSE) - permissive and compatible with HACS; contributions and forks are welcome.
 
-[hacs-shield]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
+[hacs-shield]: https://img.shields.io/badge/HACS-Default-41BDF5.svg
 [hacs-url]: https://github.com/hacs/integration
 [hacs-validate-shield]: https://github.com/jan-tdy/ha-indi-client/actions/workflows/hacs.yml/badge.svg
 [hacs-validate-url]: https://github.com/jan-tdy/ha-indi-client/actions/workflows/hacs.yml
