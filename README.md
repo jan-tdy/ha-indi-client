@@ -1,6 +1,6 @@
 # INDI Client for Home Assistant
 
-[![HACS Custom][hacs-shield]][hacs-url]
+[![HACS][hacs-shield]][hacs-url]
 [![HACS Validation][hacs-validate-shield]][hacs-validate-url]
 [![Hassfest][hassfest-shield]][hassfest-url]
 [![Tests][tests-shield]][tests-url]
@@ -15,16 +15,9 @@ client**, exactly the way [CCDciel](https://www.ap-i.net/ccdciel/en/start), KSta
 reads whatever properties the server broadcasts (already reflecting changes made by other clients)
 and, when a property allows it, can send its own commands to change it - bidirectionally.
 
-> **Status:** beta (`v1.1.0`). The protocol core and entity mapping are functional and unit
-> tested, but this has not yet been run against every INDI driver in the wild. Feedback and bug
-> reports are very welcome.
-
 > **Disclaimer:** this is an independent, unofficial client. It is **not affiliated with,
 > endorsed by, or sponsored by** the [INDI Library](https://indilib.org) project. "INDI" is used
 > here only to describe protocol compatibility with `indiserver`.
-
-> This integration is used in the author's private **DevControl2** system (built for the Bombol.Space telescope hosting
-> facility), but this integration itself is generic - it makes no assumption about any specific installation and works with any standard-compliant INDI driver/device.
 
 <img width="1555" height="929" alt="image" src="https://github.com/user-attachments/assets/f8f44958-91bd-4a4d-a263-9b23721084c0" />
 
