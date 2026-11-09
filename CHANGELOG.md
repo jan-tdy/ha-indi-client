@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.4 - 2026-11-09
+
+- **Release workflow now waits 5 minutes before releasing**: a push to
+  `main` is only released if no newer commit landed on `main` during the
+  wait, so a burst of merged PRs produces a single release for the latest
+  version instead of one per PR.
+
 ## 1.4.3 - 2026-11-04
 
 - **Moved `save_frame` path handling off the event loop**: path expansion,
