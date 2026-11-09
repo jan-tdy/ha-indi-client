@@ -6,6 +6,10 @@ name: Release
 # GitHub Release for it - no manual `git tag && git push` step needed.
 # A direct push of a "vX.Y.Z" tag is still supported for one-off/manual
 # releases, and is cross-checked against the manifest the same way.
+#
+# Debounce: a push to main first waits RELEASE_WAIT_SECONDS (5 min). If
+# another commit lands on main in the meantime, this run is skipped and
+# the newer run decides - so a burst of merged PRs yields one release.
 
 on:
   push:
@@ -14,8 +18,36 @@ on:
     tags:
       - "v*.*.*"
 
+env:
+  RELEASE_WAIT_SECONDS: 300
+
 jobs:
+  debounce:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      latest: ${{ steps.check.outputs.latest }}
+    steps:
+      - name: Wait, then check this is still the tip of main
+        id: check
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sleep "$RELEASE_WAIT_SECONDS"
+          head=$(git ls-remote "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" refs/heads/main | cut -f1)
+          if [ "$head" = "${{ github.sha }}" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Newer commit $head on main; skipping, its run will release."
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: debounce
+    if: needs.debounce.outputs.latest == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
