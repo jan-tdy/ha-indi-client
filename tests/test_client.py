@@ -483,6 +483,51 @@ def test_read_loop_survives_unexpected_callback_exception():
     asyncio.run(scenario())
 
 
+def test_reconnect_and_resync_retries_if_handshake_send_fails():
+    """A successful TCP reconnect doesn't guarantee the socket is still
+    alive by the time the post-reconnect handshake (the getProperties /
+    enableBLOB replay) tries to send - the peer can drop it again right
+    away. Before the fix (issue #41), that send failure propagated out of
+    what is now ``_reconnect_and_resync`` (then inlined in ``_read_loop``)
+    uncaught, killing the read-loop task for good and freezing the
+    integration instead of retrying.
+    """
+
+    async def scenario() -> None:
+        client = INDIClient("localhost", 7624)
+
+        reconnect_calls = 0
+
+        async def fake_reconnect_with_backoff() -> None:
+            nonlocal reconnect_calls
+            reconnect_calls += 1
+            client.connected = True
+            if client.on_connection_changed:
+                client.on_connection_changed(True)
+
+        send_calls = 0
+
+        async def fake_send(data: bytes) -> None:
+            nonlocal send_calls
+            send_calls += 1
+            if send_calls == 1:
+                raise ConnectionResetError("simulated reset right after reconnect")
+
+        client._reconnect_with_backoff = fake_reconnect_with_backoff  # noqa: SLF001
+        client._send = fake_send  # noqa: SLF001
+
+        connection_states: list[bool] = []
+        client.on_connection_changed = connection_states.append
+
+        await asyncio.wait_for(client._reconnect_and_resync(), timeout=5)  # noqa: SLF001
+
+        assert reconnect_calls == 2
+        assert client.connected is True
+        assert connection_states == [True, False, True]
+
+    asyncio.run(scenario())
+
+
 def test_enable_blob_is_replayed_after_reconnect():
     """BLOB enablement is per-connection (issue #23): a reconnect must
     resend enableBLOB for every vector a caller (e.g. a camera entity)

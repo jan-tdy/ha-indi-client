@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.5 - 2026-11-13
+
+- **Fixed the read loop dying if the post-reconnect handshake send fails
+  (#41)**: after a successful reconnect, replaying `getProperties` and
+  any previously-enabled `enableBLOB` could still fail if the connection
+  dropped again right away. That failure was uncaught and killed the
+  read-loop task for good, freezing the integration - it never
+  reconnected again until Home Assistant was restarted. The handshake is
+  now retried from scratch (fresh reconnect, with backoff) instead of
+  escaping the loop.
+
 ## 1.4.4 - 2026-11-09
 
 - **Release workflow now waits 5 minutes before releasing**: a push to
