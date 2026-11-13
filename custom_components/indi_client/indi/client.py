@@ -329,14 +329,47 @@ class INDIClient:
             if self.on_property_deleted:
                 for device in stale_devices:
                     self.on_property_deleted(device, None)
+            await self._reconnect_and_resync()
+
+    async def _reconnect_and_resync(self) -> None:
+        """Reconnect, then replay the handshake (getProperties and any
+        enableBLOB), retrying from scratch if the connection drops again
+        before the handshake finishes.
+
+        ``_reconnect_with_backoff`` only promises the TCP connect itself
+        succeeded - a send right after can still fail (the peer closing
+        the socket again immediately, a reset mid-``drain``, ...). Left
+        uncaught, that exception would escape the ``while True`` loop in
+        :meth:`_read_loop` and kill the read task for good, freezing the
+        integration (it never reconnects again) - see issue #41.
+        """
+        while True:
             await self._reconnect_with_backoff()
-            await self._send(build_get_properties())
-            # BLOB enablement is per-connection, not per-vector - the
-            # redefined defBLOBVectors will be deduplicated by callers
-            # (e.g. camera.py's `added` set) and never trigger a fresh
-            # enable_blob() call, so replay it ourselves here.
-            for (device, name), mode in self._enabled_blobs.items():
-                await self._send(build_enable_blob(device, name, mode))
+            try:
+                await self._send(build_get_properties())
+                # BLOB enablement is per-connection, not per-vector - the
+                # redefined defBLOBVectors will be deduplicated by callers
+                # (e.g. camera.py's `added` set) and never trigger a fresh
+                # enable_blob() call, so replay it ourselves here.
+                for (device, name), mode in self._enabled_blobs.items():
+                    await self._send(build_enable_blob(device, name, mode))
+            except (INDIClientError, ConnectionError, OSError) as err:
+                _LOGGER.debug(
+                    "Connection to indiserver at %s:%s dropped before the "
+                    "post-reconnect handshake finished: %s; reconnecting",
+                    self.host,
+                    self.port,
+                    err,
+                )
+                if self._writer is not None:
+                    self._writer.close()
+                self._reader = None
+                self._writer = None
+                self.connected = False
+                if self.on_connection_changed:
+                    self.on_connection_changed(False)
+                continue
+            return
 
     async def _read_until_disconnected(self) -> None:
         """Read elements until the connection drops, then return."""
