@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.5 - 2026-11-13
+## 1.4.6 - 2026-11-13
 
 - **Fixed the read loop dying if the post-reconnect handshake send fails
   (#41)**: after a successful reconnect, replaying `getProperties` and
@@ -10,6 +10,20 @@
   reconnected again until Home Assistant was restarted. The handshake is
   now retried from scratch (fresh reconnect, with backoff) instead of
   escaping the loop.
+
+## 1.4.5 - 2026-11-13
+
+- **Fixed `indi_client.set_property` sending invalid values to the driver
+  (#42)**: a YAML boolean (`true`/`false`) for a `Switch` element is now
+  normalized to the wire values `On`/`Off` instead of being sent literally
+  as `True`/`False`, any other switch value is rejected, and a `Number`
+  value that is not finite (`NaN`, `inf`) is rejected instead of being
+  forwarded to the driver. The service now also validates the request
+  against the device's current property definitions before sending
+  anything: an unknown device/property, a `type` that does not match the
+  property's actual type, and a read-only property all now raise a clear
+  `ServiceValidationError` instead of silently doing the wrong thing or
+  failing deep inside the client.
 
 ## 1.4.4 - 2026-11-09
 
