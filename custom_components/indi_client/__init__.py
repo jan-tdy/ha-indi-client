@@ -8,6 +8,7 @@ Assistant entities, bidirectionally.
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 
 import voluptuous as vol
@@ -214,17 +215,48 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         prop_name = call.data[ATTR_PROPERTY]
         values = call.data[ATTR_VALUES]
         ptype = call.data[ATTR_TYPE]
+        prop = client.devices.get(device, {}).get(prop_name)
+        if prop is None:
+            raise ServiceValidationError(f"Unknown property {device}.{prop_name}")
+        if prop.ptype != ptype:
+            raise ServiceValidationError(
+                f"{device}.{prop_name} is a {prop.ptype} property, not {ptype}"
+            )
+        if not prop.writable:
+            raise ServiceValidationError(f"{device}.{prop_name} is read-only")
         try:
             if ptype == "Number":
-                try:
-                    numeric_values = {k: float(v) for k, v in values.items()}
-                except (TypeError, ValueError) as err:
-                    raise ServiceValidationError(f"Invalid numeric value for {prop_name}: {err}") from err
+                numeric_values: dict[str, float] = {}
+                for element_name, raw_value in values.items():
+                    try:
+                        numeric_value = float(raw_value)
+                    except (TypeError, ValueError) as err:
+                        raise ServiceValidationError(
+                            f"Invalid numeric value for {prop_name}.{element_name}: {err}"
+                        ) from err
+                    if not math.isfinite(numeric_value):
+                        raise ServiceValidationError(
+                            f"Invalid numeric value for {prop_name}.{element_name}: "
+                            f"{raw_value!r} is not finite"
+                        )
+                    numeric_values[element_name] = numeric_value
                 await client.set_number(device, prop_name, numeric_values)
             elif ptype == "Text":
                 await client.set_text(device, prop_name, {k: str(v) for k, v in values.items()})
             else:
-                await client.set_switch(device, prop_name, {k: str(v) for k, v in values.items()})
+                switch_values: dict[str, str] = {}
+                for element_name, raw_value in values.items():
+                    if isinstance(raw_value, bool):
+                        switch_value = "On" if raw_value else "Off"
+                    else:
+                        switch_value = str(raw_value)
+                    if switch_value not in ("On", "Off"):
+                        raise ServiceValidationError(
+                            f"Invalid switch value for {prop_name}.{element_name}: "
+                            f"{raw_value!r} is not 'On' or 'Off'"
+                        )
+                    switch_values[element_name] = switch_value
+                await client.set_switch(device, prop_name, switch_values)
         except INDIClientError as err:
             raise ServiceValidationError(f"Not connected to indiserver: {err}") from err
 
